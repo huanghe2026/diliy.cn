@@ -1,0 +1,21 @@
+---
+import Base from '../layouts/Base.astro';
+import Faq from '../components/Faq.astro';
+import { t, type Lang } from '../i18n/ui';
+
+const lang: Lang = 'en';
+---
+
+<Base lang={lang} title="Geoyuan // FAQ">
+  <section style="padding-top:140px; min-height:100vh;">
+    <div class="container">
+      <div class="section-label">{t(lang, 'qa_label')}</div>
+      <h2>{t(lang, 'qa_title')}</h2>
+      <p class="tagline" style="margin-bottom:40px;">{t(lang, 'qa_intro')}</p>
+      <Faq lang={lang} />
+      <div class="center-col" style="margin-top:40px;">
+        <a class="btn btn-primary" href="/test">{t(lang, 'cta_join')} → /test</a>
+      </div>
+    </div>
+  </section>
+</Base>

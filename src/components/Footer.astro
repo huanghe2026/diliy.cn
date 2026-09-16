@@ -1,0 +1,21 @@
+---
+import { t, type Lang } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<footer>
+  <div class="container">
+    <div class="footer-left">{t(lang, 'footer_left')}</div>
+    <div class="footer-links">
+      <a href="/blog">{t(lang, 'nav_blog')}</a>
+      <a href={lang === 'zh' ? '/zh/qa' : '/qa'}>{t(lang, 'nav_qa')}</a>
+      <a href="https://github.com/huanghe2026">{t(lang, 'footer_github')}</a>
+      <a href="https://x.com/huanghe11">{t(lang, 'footer_x')}</a>
+      <a href="https://geoyuan.com/huanghe">{t(lang, 'footer_geoyuan')}</a>
+    </div>
+  </div>
+</footer>

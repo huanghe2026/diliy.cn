@@ -1,0 +1,17 @@
+---
+import Base from '../layouts/Base.astro';
+import Quiz from '../components/Quiz.astro';
+import { t, type Lang } from '../i18n/ui';
+
+const lang: Lang = 'en';
+---
+
+<Base lang={lang} title="Geoyuan // the challenge">
+  <section style="padding-top:140px; min-height:100vh;">
+    <div class="container">
+      <div class="section-label">{t(lang, 'test_label')}</div>
+      <h2>{t(lang, 'test_title')}</h2>
+      <Quiz lang={lang} />
+    </div>
+  </section>
+</Base>

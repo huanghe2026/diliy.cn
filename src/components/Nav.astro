@@ -1,0 +1,46 @@
+---
+import { t, toggleHref, type Lang } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+  pathname: string;
+}
+const { lang, pathname } = Astro.props;
+
+// Base route for "active" highlighting (strip locale prefix + trailing slash)
+const base = pathname.replace(/^\/zh/, '') || '/';
+
+const links = [
+  { href: '/#about', key: 'nav_about' as const, match: '/#about' },
+  { href: '/#team', key: 'nav_team' as const, match: '#team' },
+  { href: '/#stack', key: 'nav_stack' as const, match: '#stack' },
+  { href: '/qa', key: 'nav_qa' as const, match: '/qa' },
+  { href: '/#join', key: 'nav_join' as const, match: '#join' },
+];
+
+const blogHref = lang === 'zh' ? '/zh/blog' : '/blog';
+// blog is a static mdBook, not locale-prefixed
+const blogLink = '/blog';
+---
+
+<nav>
+  <div class="container">
+    <a href={lang === 'zh' ? '/zh' : '/'} class="logo">Geoyuan<span>//</span>team</a>
+    <ul class="nav-links">
+      {links.map((l) => (
+        <li>
+          <a
+            href={(lang === 'zh' ? '/zh' : '') + l.href}
+            class:list={[{ active: base === l.match || base.endsWith(l.match) }]}
+          >
+            {t(lang, l.key)}
+          </a>
+        </li>
+      ))}
+      <li><a href={blogLink}>{t(lang, 'nav_blog')}</a></li>
+      <li>
+        <a class="lang-toggle" href={toggleHref(pathname, lang)}>{t(lang, 'lang_toggle')}</a>
+      </li>
+    </ul>
+  </div>
+</nav>

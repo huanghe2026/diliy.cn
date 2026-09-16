@@ -1,0 +1,98 @@
+---
+import Base from '../layouts/Base.astro';
+import { t, type Lang } from '../i18n/ui';
+
+const lang: Lang = 'en';
+const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Radare2', 'Wireshark', 'Burp Suite', 'Linux', 'Docker', 'Git', 'tmux', 'neovim'];
+---
+
+<Base lang={lang} title="diliy.cn/ — Geoyuan Team">
+  <section class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <div class="terminal-label">{t(lang, 'hero_terminal')}</div>
+        <h1>
+          {t(lang, 'hero_title_1')}<br />
+          <span class="glitch">{t(lang, 'hero_title_2')}</span><span class="cursor"></span>
+        </h1>
+        <p class="tagline">{t(lang, 'hero_tagline')}</p>
+        <div class="cta-row">
+          <a href="#join" class="btn btn-primary">{t(lang, 'cta_join')}</a>
+          <a href="#team" class="btn btn-ghost">{t(lang, 'cta_meet')}</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="about">
+    <div class="container">
+      <div class="section-label">{t(lang, 'about_label')}</div>
+      <div class="about-grid">
+        <div class="about-text">
+          <h2>{t(lang, 'about_title')}</h2>
+          <p>{t(lang, 'about_p1')}</p>
+          <p>{t(lang, 'about_p2')}</p>
+        </div>
+        <div class="stats">
+          <div class="stat-card"><div class="stat-value">47</div><div class="stat-label">{t(lang, 'stat_ctf_label')}</div></div>
+          <div class="stat-card"><div class="stat-value">12</div><div class="stat-label">{t(lang, 'stat_members_label')}</div></div>
+          <div class="stat-card"><div class="stat-value">∞</div><div class="stat-label">{t(lang, 'stat_coffee_label')}</div></div>
+          <div class="stat-card"><div class="stat-value">3</div><div class="stat-label">{t(lang, 'stat_0day_label')}</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="team">
+    <div class="container">
+      <div class="section-label">{t(lang, 'team_label')}</div>
+      <h2>{t(lang, 'team_title')}</h2>
+      <div class="team-grid">
+        <div class="member-card">
+          <div class="member-avatar">NX</div>
+          <div class="member-name">nyx</div>
+          <div class="member-role">lead / reverse eng</div>
+          <p class="member-bio">Lives in IDA and Ghidra. Speaks x86 better than English.</p>
+        </div>
+        <div class="member-card">
+          <div class="member-avatar">ØR</div>
+          <div class="member-name">orphan</div>
+          <div class="member-role">web / pwn</div>
+          <p class="member-bio">XSS is a lifestyle. Still mad about log4j.</p>
+        </div>
+        <div class="member-card">
+          <div class="member-avatar">GH</div>
+          <div class="member-name">ghost</div>
+          <div class="member-role">infra / ops</div>
+          <p class="member-bio">Keeps the servers up and the noise down. Prefer anonymity.</p>
+        </div>
+        <div class="member-card">
+          <div class="member-avatar">VK</div>
+          <div class="member-name">v0idk1tten</div>
+          <div class="member-role">malware analysis</div>
+          <p class="member-bio">Dissects ransomware for breakfast. Cat memes for lunch.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="stack">
+    <div class="container">
+      <div class="section-label">{t(lang, 'stack_label')}</div>
+      <h2>{t(lang, 'stack_title')}</h2>
+      <p style="color: var(--muted); max-width: 500px;">{t(lang, 'stack_desc')}</p>
+      <div class="stack-grid">
+        {stack.map((s) => <span class="stack-tag">{s}</span>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section" id="join">
+    <div class="container">
+      <div class="section-label" style="justify-content: center; display: flex;">{t(lang, 'join_label')}</div>
+      <h2>{t(lang, 'join_title')}</h2>
+      <p>{t(lang, 'join_desc')}</p>
+      <a href={`mailto:${t(lang, 'join_email')}`} class="btn btn-primary">{t(lang, 'join_email')}</a>
+    </div>
+  </section>
+</Base>

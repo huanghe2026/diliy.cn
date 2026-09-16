@@ -1,0 +1,259 @@
+---
+import type { Lang } from '../i18n/ui';
+import { t } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<div class="quiz-wrap" id="quiz">
+  <div id="quiz-start" class="center-col">
+    <p class="tagline" style="margin-bottom:28px;">{t(lang, 'test_intro')}</p>
+    <button class="btn btn-primary" id="quiz-start-btn">{t(lang, 'test_start')}</button>
+  </div>
+
+  <div id="quiz-game" class="hidden">
+    <div class="quiz-meta">
+      <span><span id="quiz-progress-text"></span></span>
+      <span class="timer" id="quiz-timer"></span>
+    </div>
+    <div class="progress"><span id="quiz-progress-bar"></span></div>
+    <div id="quiz-question"></div>
+    <div class="q-nav">
+      <button class="btn btn-ghost" id="quiz-prev">{t(lang, 'test_prev')}</button>
+      <button class="btn btn-primary" id="quiz-next">{t(lang, 'test_next')}</button>
+      <button class="btn btn-primary hidden" id="quiz-submit">{t(lang, 'test_submit')}</button>
+    </div>
+  </div>
+
+  <div id="quiz-result" class="hidden"></div>
+</div>
+
+<script>
+  import { quiz } from '../data/quiz';
+  import { roles } from '../data/team';
+  import { ui } from '../i18n/ui';
+
+  const lang = document.documentElement.lang === 'zh' ? 'zh' : 'en';
+  const T = ui[lang];
+
+  const STORE_KEY = 'geoyuan_test_v1';
+  const TOTAL_TIME = 300; // seconds — the time limit (anti-cheat)
+
+  const elStart = document.getElementById('quiz-start') as HTMLElement;
+  const elGame = document.getElementById('quiz-game') as HTMLElement;
+  const elResult = document.getElementById('quiz-result') as HTMLElement;
+  const elStartBtn = document.getElementById('quiz-start-btn') as HTMLButtonElement;
+  const elQuestion = document.getElementById('quiz-question') as HTMLElement;
+  const elProgressText = document.getElementById('quiz-progress-text') as HTMLElement;
+  const elProgressBar = document.getElementById('quiz-progress-bar') as HTMLElement;
+  const elTimer = document.getElementById('quiz-timer') as HTMLElement;
+  const elPrev = document.getElementById('quiz-prev') as HTMLButtonElement;
+  const elNext = document.getElementById('quiz-next') as HTMLButtonElement;
+  const elSubmit = document.getElementById('quiz-submit') as HTMLButtonElement;
+
+  // ---- helpers ----
+  function shuffle<T>(arr: T[]): T[] {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  function hash(s: string): number {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+    return h;
+  }
+
+  // prepared questions: shuffled order + shuffled options (answer remapped), with a
+  // hash of the correct option text stored (raises the bar for client-side cheating).
+  interface Prepared extends ReturnType<typeof prepare>[number] {}
+  function prepare() {
+    return shuffle(quiz).map((item) => {
+      const idx = item.options.en.map((_, i) => i);
+      const perm = shuffle(idx);
+      const optionsEn = perm.map((i) => item.options.en[i]);
+      const optionsZh = perm.map((i) => item.options.zh[i]);
+      const newAnswer = perm.indexOf(item.answer);
+      const prepared = {
+        ...item,
+        options: { en: optionsEn, zh: optionsZh },
+        answer: newAnswer,
+        _hash: 0,
+      };
+      prepared._hash = hash(prepared.options[lang][newAnswer]);
+      return prepared;
+    });
+  }
+
+  let questions: Prepared[] = [];
+  let answers: number[] = [];
+  let current = 0;
+  let timeLeft = TOTAL_TIME;
+  let timerId: number | undefined;
+
+  function catLabel(c: string): string {
+    if (c === 'mission') return T.test_cat_mission;
+    if (c === 'security') return T.test_cat_security;
+    return T.test_cat_role;
+  }
+
+  function renderQuestion() {
+    const q = questions[current];
+    const opts = q.options[lang];
+    elProgressText.textContent = `${T.test_progress} ${current + 1} / ${questions.length}`;
+    elProgressBar.style.width = `${((current + 1) / questions.length) * 100}%`;
+
+    const optHtml = opts
+      .map(
+        (o, i) => `
+        <label class="q-option ${answers[current] === i ? 'selected' : ''}" data-i="${i}">
+          <input type="radio" name="q" value="${i}" ${answers[current] === i ? 'checked' : ''} />
+          <span>${o}</span>
+        </label>`
+      )
+      .join('');
+
+    elQuestion.innerHTML = `
+      <div class="q-card">
+        <div class="q-cat">${catLabel(q.category)}</div>
+        <div class="q-text">${q.q[lang]}</div>
+        <div class="q-options">${optHtml}</div>
+      </div>`;
+
+    elQuestion.querySelectorAll('.q-option').forEach((node) => {
+      node.addEventListener('click', (e) => {
+        const i = Number((node as HTMLElement).dataset.i);
+        answers[current] = i;
+        elQuestion.querySelectorAll('.q-option').forEach((n) => n.classList.remove('selected'));
+        (node as HTMLElement).classList.add('selected');
+      });
+    });
+
+    elPrev.disabled = current === 0;
+    elPrev.style.visibility = current === 0 ? 'hidden' : 'visible';
+    const last = current === questions.length - 1;
+    elNext.classList.toggle('hidden', last);
+    elSubmit.classList.toggle('hidden', !last);
+  }
+
+  function startTimer() {
+    timeLeft = TOTAL_TIME;
+    renderTimer();
+    timerId = window.setInterval(() => {
+      timeLeft--;
+      renderTimer();
+      if (timeLeft <= 0) {
+        clearInterval(timerId);
+        submit(true);
+      }
+    }, 1000);
+  }
+  function renderTimer() {
+    const m = Math.floor(timeLeft / 60);
+    const s = String(timeLeft % 60).padStart(2, '0');
+    elTimer.textContent = `${T.test_timer}: ${m}:${s}`;
+    elTimer.classList.toggle('warn', timeLeft <= 30);
+  }
+
+  function submit(auto: boolean) {
+    if (timerId) clearInterval(timerId);
+    let correct = 0;
+    const tally: Record<string, number> = {};
+    roles.forEach((r) => (tally[r.id] = 0));
+    questions.forEach((q, i) => {
+      const sel = answers[i];
+      if (sel >= 0 && hash(q.options[lang][sel]) === q._hash) {
+        correct++;
+        tally[q.role]++;
+      }
+    });
+    const score = Math.round((correct / questions.length) * 100);
+    let bestRole = roles[0].id;
+    let best = -1;
+    roles.forEach((r) => {
+      if (tally[r.id] > best) {
+        best = tally[r.id];
+        bestRole = r.id;
+      }
+    });
+    const suggested =
+      best > 0
+        ? roles.find((r) => r.id === bestRole)!.name[lang]
+        : lang === 'zh'
+          ? '尚不明显，欢迎多方位参与'
+          : 'not clear yet — contribute anywhere';
+    const result = { score, role: suggested };
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(result));
+    } catch {}
+    showResult(result, auto);
+  }
+
+  function showResult(result: { score: number; role: string }, auto = false) {
+    elGame.classList.add('hidden');
+    elStart.classList.add('hidden');
+    elResult.classList.remove('hidden');
+    elResult.innerHTML = `
+      <div class="result-card">
+        <div class="section-label" style="justify-content:center;display:flex;">${auto ? T.test_timeup : T.test_result_title}</div>
+        <div class="result-score">${result.score}</div>
+        <div class="stat-label">${T.test_score}</div>
+        <div class="result-role" style="margin-top:24px;">${T.test_role_title}</div>
+        <div class="result-desc"><strong>${result.role}</strong><br/>${T.test_role_desc}</div>
+        <a class="btn btn-primary" href="${lang === 'zh' ? '/zh/team' : '/team'}">${lang === 'zh' ? '查看团队' : 'See the team'}</a>
+        <div style="margin-top:18px;"><button class="lang-toggle" id="quiz-retry">${T.test_retry}</button></div>
+      </div>`;
+    const retry = document.getElementById('quiz-retry') as HTMLButtonElement;
+    retry.addEventListener('click', () => {
+      try {
+        localStorage.removeItem(STORE_KEY);
+      } catch {}
+      location.reload();
+    });
+  }
+
+  function start() {
+    questions = prepare();
+    answers = questions.map(() => -1);
+    current = 0;
+    elStart.classList.add('hidden');
+    elResult.classList.add('hidden');
+    elGame.classList.remove('hidden');
+    renderQuestion();
+    startTimer();
+  }
+
+  // disable text selection / context menu inside the quiz (light anti-cheat)
+  document.getElementById('quiz')?.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // restore previous attempt (single-attempt lock)
+  let restored: { score: number; role: string } | null = null;
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) restored = JSON.parse(raw);
+  } catch {}
+  if (restored) {
+    elStart.classList.add('hidden');
+    showResult(restored);
+  } else {
+    elStartBtn.addEventListener('click', start);
+    elPrev.addEventListener('click', () => {
+      if (current > 0) {
+        current--;
+        renderQuestion();
+      }
+    });
+    elNext.addEventListener('click', () => {
+      if (current < questions.length - 1) {
+        current++;
+        renderQuestion();
+      }
+    });
+    elSubmit.addEventListener('click', () => submit(false));
+  }
+</script>

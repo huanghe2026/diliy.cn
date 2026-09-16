@@ -1,0 +1,15 @@
+[book]
+title = "Geoyuan Team // Blogs"
+authors = ["Geoyuan Team"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "../blog"
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/huanghe2026"
+additional-css = ["src/assets/custom.css"]
+additional-js = ["src/assets/custom.js"]

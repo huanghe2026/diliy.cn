@@ -1,0 +1,22 @@
+---
+import Base from '../layouts/Base.astro';
+import MemberCard from '../components/MemberCard.astro';
+import { roles } from '../data/team';
+import { t, type Lang } from '../i18n/ui';
+
+const lang: Lang = 'en';
+---
+
+<Base lang={lang} title="Geoyuan Team // the five pillars">
+  <section id="team" style="padding-top:140px;">
+    <div class="container">
+      <div class="section-label">{t(lang, 'team_page_label')}</div>
+      <h2>{t(lang, 'team_page_title')}</h2>
+      <p class="tagline" style="margin-bottom:8px;">{t(lang, 'team_page_desc')}</p>
+      <p class="locked-note" style="margin-bottom:40px;">{t(lang, 'team_psych_note')}</p>
+      <div class="team-grid">
+        {roles.map((role) => <MemberCard role={role} lang={lang} />)}
+      </div>
+    </div>
+  </section>
+</Base>

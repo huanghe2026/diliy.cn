@@ -1,0 +1,23 @@
+/* Geoyuan blog — custom theme overrides (mdBook `coal` base) */
+:root {
+  --geoyuan-accent: #00ff9d;
+  --geoyuan-cyan: #00d4ff;
+}
+
+a,
+a:visited {
+  color: var(--geoyuan-accent);
+}
+
+a:hover {
+  color: var(--geoyuan-cyan);
+}
+
+/* matrix-ish scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e1e2e;
+  border-radius: 6px;
+}
