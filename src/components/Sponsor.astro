@@ -1,0 +1,64 @@
+---
+import { t, type Lang } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+
+// ============================================================
+//  EDIT THESE with your real accounts (safe to commit empty
+//  until filled — the site still builds & renders).
+//  - PayPal: your PayPal.me link or paypal.com donation URL
+//  - Afdian: your afdian.com page URL
+//  - Alipay / WeChat: drop the QR images into public/sponsor/
+//    as alipay.png and wechat.png
+// ============================================================
+const paypalUrl = 'https://paypal.me/yourname';     // TODO: replace
+const afdianUrl = 'https://afdian.com/a/yourname';   // TODO: replace
+const alipayQr  = '/sponsor/alipay.png';
+const wechatQr  = '/sponsor/wechat.png';
+// ============================================================
+---
+
+<section class="cta-section" id="sponsor">
+  <div class="container">
+    <div class="section-label" style="justify-content: center; display: flex;">
+      {t(lang, 'sponsor_label')}
+    </div>
+    <h2>{t(lang, 'sponsor_title')}</h2>
+    <p>{t(lang, 'sponsor_desc')}</p>
+
+    <div class="sponsor-grid">
+      <div class="sponsor-card">
+        <div class="sponsor-name">{t(lang, 'sponsor_paypal')}</div>
+        <p class="sponsor-note">{t(lang, 'sponsor_paypal_note')}</p>
+        <a href={paypalUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          {t(lang, 'sponsor_donate')}
+        </a>
+      </div>
+
+      <div class="sponsor-card">
+        <div class="sponsor-name">{t(lang, 'sponsor_alipay')}</div>
+        <p class="sponsor-note">{t(lang, 'sponsor_scan_note')}</p>
+        <img src={alipayQr} alt="Alipay" class="sponsor-qr" loading="lazy"
+             onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'sponsor-qr-fallback',textContent:'收款码待上传'}))" />
+      </div>
+
+      <div class="sponsor-card">
+        <div class="sponsor-name">{t(lang, 'sponsor_wechat')}</div>
+        <p class="sponsor-note">{t(lang, 'sponsor_scan_note')}</p>
+        <img src={wechatQr} alt="WeChat Pay" class="sponsor-qr" loading="lazy"
+             onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'sponsor-qr-fallback',textContent:'收款码待上传'}))" />
+      </div>
+
+      <div class="sponsor-card">
+        <div class="sponsor-name">{t(lang, 'sponsor_afdian')}</div>
+        <p class="sponsor-note">{t(lang, 'sponsor_afdian_note')}</p>
+        <a href={afdianUrl} class="btn btn-primary" target="_blank" rel="noopener">
+          {t(lang, 'sponsor_donate')}
+        </a>
+      </div>
+    </div>
+  </div>
+</section>

@@ -22,7 +22,7 @@ export const ui = {
     footer_x: 'Twitter:X',
     footer_geoyuan: 'Geoyuan',
     // landing
-    hero_terminal: 'huanghe@hangzhou:~# ./apply.sh',
+    hero_terminal: 'huanghe@hangzhou.geoyuan.com:~# ./apply.sh',
     hero_title_1: 'We build Geoyuan',
     hero_title_2: 'to a Network state',
     hero_tagline:
@@ -84,6 +84,18 @@ export const ui = {
     test_cat_mission: 'mission fit',
     test_cat_security: 'security literacy',
     test_cat_role: 'role awareness',
+    // sponsor / donate
+    sponsor_label: '// sponsor',
+    sponsor_title: 'Buy us a coffee',
+    sponsor_desc: 'If this project helped you, fuel the next build. Every tip keeps the servers humming and the coffee flowing.',
+    sponsor_paypal: 'PayPal',
+    sponsor_paypal_note: 'For supporters outside China',
+    sponsor_alipay: 'Alipay',
+    sponsor_wechat: 'WeChat Pay',
+    sponsor_scan_note: 'Scan with the app to tip',
+    sponsor_afdian: 'Afdian',
+    sponsor_afdian_note: 'Recurring / membership tips',
+    sponsor_donate: 'Donate',
   },
   zh: {
     nav_about: '关于',
@@ -97,7 +109,7 @@ export const ui = {
     footer_github: 'GitHub',
     footer_x: 'Twitter:X',
     footer_geoyuan: 'Geoyuan',
-    hero_terminal: 'huanghe@hangzhou:~# ./apply.sh',
+    hero_terminal: 'huanghe@hangzhou.geoyuan.com:~# ./apply.sh',
     hero_title_1: '我们正在构建 Geoyuan',
     hero_title_2: '迈向网络国家',
     hero_tagline:
@@ -151,6 +163,18 @@ export const ui = {
     test_cat_mission: '使命契合',
     test_cat_security: '安全素养',
     test_cat_role: '角色认知',
+    // 赞助 / 打赏
+    sponsor_label: '// 赞助',
+    sponsor_title: '请我们喝杯咖啡',
+    sponsor_desc: '如果这个项目帮到了你，请为下一次构建加点燃料。每一份打赏都让服务器转得更稳、咖啡更香。',
+    sponsor_paypal: 'PayPal',
+    sponsor_paypal_note: '境外支持者请用',
+    sponsor_alipay: '支付宝',
+    sponsor_wechat: '微信支付',
+    sponsor_scan_note: '用对应 App 扫码打赏',
+    sponsor_afdian: '爱发电',
+    sponsor_afdian_note: '按月 / 会员打赏',
+    sponsor_donate: '打赏',
   },
 } as const;
 

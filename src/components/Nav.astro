@@ -21,6 +21,12 @@ const links = [
 const blogHref = lang === 'zh' ? '/zh/blog' : '/blog';
 // blog is a static mdBook, not locale-prefixed
 const blogLink = '/blog';
+
+// The lang toggle picks the *other* locale. When clicked we stamp a `lang`
+// cookie so nginx won't re-redirect the visitor based on Accept-Language
+// (otherwise an explicit choice would be trapped in a redirect loop).
+const targetLang: Lang = lang === 'en' ? 'zh' : 'en';
+const toggleCookie = `lang=${targetLang};path=/;max-age=31536000;samesite=lax`;
 ---
 
 <nav>
@@ -39,7 +45,7 @@ const blogLink = '/blog';
       ))}
       <li><a href={blogLink}>{t(lang, 'nav_blog')}</a></li>
       <li>
-        <a class="lang-toggle" href={toggleHref(pathname, lang)}>{t(lang, 'lang_toggle')}</a>
+        <a class="lang-toggle" href={toggleHref(pathname, lang)} onclick={`document.cookie='${toggleCookie}'`}>{t(lang, 'lang_toggle')}</a>
       </li>
     </ul>
   </div>

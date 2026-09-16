@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import Sponsor from '../components/Sponsor.astro';
 import { t, type Lang } from '../i18n/ui';
 
 const lang: Lang = 'en';
@@ -95,4 +96,6 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
       <a href={`mailto:${t(lang, 'join_email')}`} class="btn btn-primary">{t(lang, 'join_email')}</a>
     </div>
   </section>
+
+  <Sponsor lang={lang} />
 </Base>
