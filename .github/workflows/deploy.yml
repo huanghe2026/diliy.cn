@@ -1,0 +1,31 @@
+name: Deploy to diliy.cn
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build & publish on server (SSH)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd /var/www/html/diliy.cn
+            git fetch --depth=1 https://github.com/huanghe2026/diliy.cn.git main
+            git reset --hard FETCH_HEAD
+            npm ci
+            npm run build
+            cp -r dist/. /var/www/html/diliy.cn/
+            cd blogs-src && mdbook build
