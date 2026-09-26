@@ -19,11 +19,21 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
+          # Run the build as the unprivileged `deploy` user so output in dist/ is
+          # never owned by root. A root-owned dist breaks the next `deploy`-user
+          # build with EACCES and yields a missing index.html -> 403/500.
+          # If the SSH login is already `deploy`, run directly (no sudo password prompt).
           script: |
             set -e
             cd /var/www/html/diliy.cn
-            git fetch --depth=1 https://github.com/huanghe2026/diliy.cn.git main
-            git reset --hard FETCH_HEAD
-            npm ci
-            npm run build
-            cp -r dist/. /var/www/html/diliy.cn/dist/
+            build() {
+              git fetch --depth=1 https://github.com/huanghe2026/diliy.cn.git main
+              git reset --hard FETCH_HEAD
+              npm ci
+              npm run build
+            }
+            if [ "$(id -u)" = "0" ]; then
+              sudo -u deploy bash -c "$(declare -f build); build"
+            else
+              build
+            fi
