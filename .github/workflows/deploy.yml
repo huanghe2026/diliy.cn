@@ -26,4 +26,4 @@ jobs:
             git reset --hard FETCH_HEAD
             npm ci
             npm run build
-            cp -r dist/. /var/www/html/diliy.cn/
+            cp -r dist/. /var/www/html/diliy.cn/dist/
