@@ -1,6 +1,9 @@
 import type { RoleId } from './team';
 
-export type Category = 'mission' | 'security' | 'role';
+export type Category = 'mission' | 'security' | 'role' | 'ai-era';
+
+/** Minimum score (%) required to be flagged as "qualified" to apply. */
+export const QUALIFIED_SCORE = 70;
 
 export interface QuizItem {
   id: string;
@@ -352,6 +355,118 @@ export const quiz: QuizItem[] = [
     explain: {
       en: 'A challenge is a filter, not a wall. Growth and contribution beat gaming the system.',
       zh: '挑战是过滤器，不是墙。成长与贡献胜过钻空子。',
+    },
+  },
+  {
+    id: 'q13',
+    category: 'ai-era',
+    role: 'ai',
+    q: {
+      en: 'Generative Engine Optimization (GEO) is best described as:',
+      zh: '生成式引擎优化（GEO）最接近：',
+    },
+    options: {
+      en: [
+        'Buying ads on a traditional search engine',
+        'Engineering content so LLM-powered search cites you accurately',
+        'Writing the longest possible blog posts',
+        'Hiding your site from every AI crawler',
+      ],
+      zh: [
+        '在传统搜索引擎上买广告',
+        '优化内容，让基于大模型的搜索能准确引用你',
+        '写尽可能长的博客',
+        '把所有 AI 爬虫都挡在门外',
+      ],
+    },
+    answer: 1,
+    explain: {
+      en: 'GEO is the AI-age successor to SEO: structured data, clean semantics, and llms.txt so models quote you correctly.',
+      zh: 'GEO 是 SEO 在智能时代的继任者：靠结构化数据、干净语义与 llms.txt，让模型正确引用你。',
+    },
+  },
+  {
+    id: 'q14',
+    category: 'ai-era',
+    role: 'programmer',
+    q: {
+      en: 'A sound way to use AI while shipping secure code is to:',
+      zh: '在交付安全代码的同时善用 AI，稳妥的做法是：',
+    },
+    options: {
+      en: [
+        'Paste AI output straight into production',
+        'Let the model hold your API secrets',
+        'Use AI to draft, then review and test every line yourself',
+        'Turn off linters so AI suggestions stop warning',
+      ],
+      zh: [
+        '把 AI 输出直接粘到生产环境',
+        '让模型保管你的 API 密钥',
+        '用 AI 起草，然后自己逐行评审与测试',
+        '关掉 linter，免得 AI 建议一直报警',
+      ],
+    },
+    answer: 2,
+    explain: {
+      en: 'AI is a copilot, not an authority. You stay accountable for what ships.',
+      zh: 'AI 是副驾，不是权威。你始终对上线之物负责。',
+    },
+  },
+  {
+    id: 'q15',
+    category: 'ai-era',
+    role: 'ai',
+    q: {
+      en: 'A prompt-injection attack means:',
+      zh: '"提示注入"攻击指的是：',
+    },
+    options: {
+      en: [
+        'A SQL syntax error',
+        'Malicious instructions hidden inside data the model is told to read',
+        'A slow GPU causing timeouts',
+        'A type of network firewall',
+      ],
+      zh: [
+        '一种 SQL 语法错误',
+        '藏在模型被要求读取的数据里的恶意指令',
+        'GPU 太慢导致的超时',
+        '一种网络防火墙',
+      ],
+    },
+    answer: 1,
+    explain: {
+      en: 'If a model trusts untrusted text, an attacker can hijack its behaviour. Treat all external input as hostile.',
+      zh: '只要模型信任不可信文本，攻击者就能劫持其行为。把所有外部输入当作敌意的。',
+    },
+  },
+  {
+    id: 'q16',
+    category: 'ai-era',
+    role: 'psychology',
+    q: {
+      en: 'In the AI age, the most durable skill for our team is:',
+      zh: '在智能时代，我们团队最持久的能力是：',
+    },
+    options: {
+      en: [
+        'Memorising framework syntax',
+        'Knowing how to learn, judge, and direct AI',
+        'Avoiding every tool',
+        'Writing the most code by hand',
+      ],
+      zh: [
+        '死记框架语法',
+        '懂得如何学习、判断并驾驭 AI',
+        '避开一切工具',
+        '手写最多的代码',
+      ],
+    },
+    answer: 1,
+    explain: {
+      en: 'Syntax changes; taste, judgement, and the ability to direct tools do not. That is what we screen for.',
+      zh: '语法会变；品味、判断力与驾驭工具的能力不会。这正是我们筛选的。',
     },
   },
 ];

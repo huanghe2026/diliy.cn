@@ -7,7 +7,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "og": "node -e \"require('sharp')('public/og.svg').png().toFile('public/og.png').then(i=>console.log('og.png', i.width+'x'+i.height))\""
   },
   "dependencies": {
     "astro": "^4.16.0"

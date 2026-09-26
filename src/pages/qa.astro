@@ -1,12 +1,23 @@
 ---
 import Base from '../layouts/Base.astro';
 import Faq from '../components/Faq.astro';
+import { faq } from '../data/faq';
 import { t, type Lang } from '../i18n/ui';
 
 const lang: Lang = 'en';
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faq.map((item) => ({
+    '@type': 'Question',
+    name: item.q[lang],
+    acceptedAnswer: { '@type': 'Answer', text: item.a[lang] },
+  })),
+};
 ---
 
-<Base lang={lang} title="Geoyuan // FAQ">
+<Base lang={lang} title="Geoyuan // FAQ" description="Frequently asked questions about Geoyuan — what we are, how to join, the qualification challenge, our five roles, and how we protect your privacy.">
   <section style="padding-top:140px; min-height:100vh;">
     <div class="container">
       <div class="section-label">{t(lang, 'qa_label')}</div>
@@ -18,4 +29,5 @@ const lang: Lang = 'en';
       </div>
     </div>
   </section>
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
 </Base>

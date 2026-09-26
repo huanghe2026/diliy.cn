@@ -1,6 +1,7 @@
 ---
 import type { Lang } from '../i18n/ui';
 import { t } from '../i18n/ui';
+import { QUALIFIED_SCORE } from '../data/quiz';
 
 interface Props {
   lang: Lang;
@@ -40,7 +41,8 @@ const { lang } = Astro.props;
   const T = ui[lang];
 
   const STORE_KEY = 'geoyuan_test_v1';
-  const TOTAL_TIME = 300; // seconds — the time limit (anti-cheat)
+  const TOTAL_TIME = 360; // seconds — the time limit (anti-cheat)
+  const QUALIFIED = QUALIFIED_SCORE; // score % needed to be flagged "qualified"
 
   const elStart = document.getElementById('quiz-start') as HTMLElement;
   const elGame = document.getElementById('quiz-game') as HTMLElement;
@@ -99,6 +101,7 @@ const { lang } = Astro.props;
   function catLabel(c: string): string {
     if (c === 'mission') return T.test_cat_mission;
     if (c === 'security') return T.test_cat_security;
+    if (c === 'ai-era') return T.test_cat_aiera;
     return T.test_cat_role;
   }
 
@@ -165,12 +168,15 @@ const { lang } = Astro.props;
     let correct = 0;
     const tally: Record<string, number> = {};
     roles.forEach((r) => (tally[r.id] = 0));
+    const reviews: { q: string; correct: boolean; explain: string }[] = [];
     questions.forEach((q, i) => {
       const sel = answers[i];
-      if (sel >= 0 && hash(q.options[lang][sel]) === q._hash) {
+      const ok = sel >= 0 && hash(q.options[lang][sel]) === q._hash;
+      if (ok) {
         correct++;
         tally[q.role]++;
       }
+      reviews.push({ q: q.q[lang], correct: ok, explain: q.explain[lang] });
     });
     const score = Math.round((correct / questions.length) * 100);
     let bestRole = roles[0].id;
@@ -187,25 +193,51 @@ const { lang } = Astro.props;
         : lang === 'zh'
           ? '尚不明显，欢迎多方位参与'
           : 'not clear yet — contribute anywhere';
-    const result = { score, role: suggested };
+    const result = {
+      score,
+      role: suggested,
+      qualified: score >= QUALIFIED,
+      reviews,
+    };
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(result));
+      // store only what the homepage badge needs
+      localStorage.setItem(STORE_KEY, JSON.stringify({ score, role: suggested }));
     } catch {}
     showResult(result, auto);
   }
 
-  function showResult(result: { score: number; role: string }, auto = false) {
+  function showResult(
+    result: { score: number; role: string; qualified: boolean; reviews: { q: string; correct: boolean; explain: string }[] },
+    auto = false
+  ) {
     elGame.classList.add('hidden');
     elStart.classList.add('hidden');
     elResult.classList.remove('hidden');
+    const verdict = result.qualified
+      ? `<div class="result-verdict pass">✓ ${T.test_verdict_pass}</div>`
+      : `<div class="result-verdict fail">✕ ${T.test_verdict_fail}</div>`;
+    const reviewHtml = result.reviews
+      .map(
+        (r) => `
+        <div class="review-item ${r.correct ? 'ok' : 'no'}">
+          <div class="review-q"><span class="review-mark">${r.correct ? '✓' : '✕'}</span> ${r.q}</div>
+          <div class="review-explain">${r.explain}</div>
+        </div>`
+      )
+      .join('');
     elResult.innerHTML = `
-      <div class="result-card">
+      <div class="result-card ${result.qualified ? 'is-pass' : 'is-fail'}">
         <div class="section-label" style="justify-content:center;display:flex;">${auto ? T.test_timeup : T.test_result_title}</div>
+        ${verdict}
         <div class="result-score">${result.score}</div>
         <div class="stat-label">${T.test_score}</div>
         <div class="result-role" style="margin-top:24px;">${T.test_role_title}</div>
         <div class="result-desc"><strong>${result.role}</strong><br/>${T.test_role_desc}</div>
         <a class="btn btn-primary" href="${lang === 'zh' ? '/zh/team' : '/team'}">${lang === 'zh' ? '查看团队' : 'See the team'}</a>
+        <div class="review-block">
+          <div class="review-head">${T.test_review_title}</div>
+          ${reviewHtml}
+        </div>
         <div style="margin-top:18px;"><button class="lang-toggle" id="quiz-retry">${T.test_retry}</button></div>
       </div>`;
     const retry = document.getElementById('quiz-retry') as HTMLButtonElement;

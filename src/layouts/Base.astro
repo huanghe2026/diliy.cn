@@ -2,14 +2,77 @@
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
+import { roles } from '../data/team';
 import type { Lang } from '../i18n/ui';
 
 interface Props {
   lang: Lang;
   title: string;
+  description?: string;
 }
-const { lang, title } = Astro.props;
+const { lang, title, description } = Astro.props;
 const pathname = Astro.url.pathname;
+const SITE = 'https://diliy.cn';
+const canonical = SITE + (pathname === '' ? '/' : pathname);
+const desc =
+  description ??
+  'Geoyuan — a borderless, AI-native dev crew building toward a network state. Take the AI-age qualification challenge to apply.';
+
+// hreflang alternates (bilingual: en <-> zh)
+const enPath = pathname.startsWith('/zh') ? pathname.slice(3) || '/' : pathname;
+const zhPath = pathname.startsWith('/zh') ? pathname : '/zh' + (pathname === '/' ? '' : pathname);
+const enUrl = SITE + enPath;
+const zhUrl = SITE + zhPath;
+const OG_IMAGE = SITE + '/og.png';
+
+// ---- GEO: structured data so AI search engines can cite us accurately ----
+const orgLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'Geoyuan',
+  alternateName: 'Geoyuan Team',
+  url: SITE,
+  description:
+    'A distributed, borderless team of builders — programmers, artists, AI experts, data analysts and psychology experts — building toward a network state.',
+  slogan: 'We build Geoyuan to a network state.',
+  email: 'hangzhou62@gmail.com',
+  identical: ['https://diliy.cn'],
+};
+
+const siteLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'Geoyuan',
+  url: SITE,
+  inLanguage: lang,
+};
+
+const jobLd = roles.map((r) => ({
+  '@context': 'https://schema.org',
+  '@type': 'JobPosting',
+  title: r.name.en + ' — Geoyuan',
+  description: r.bio.en + ' ' + r.looking.en,
+  datePosted: '2026-01-01',
+  employmentType: 'OTHER',
+  hiringOrganization: {
+    '@type': 'Organization',
+    name: 'Geoyuan',
+    sameAs: SITE,
+  },
+  jobLocationType: 'TELECOMMUTE',
+  applicantLocationRequirements: {
+    '@type': 'Country',
+    name: 'Worldwide',
+  },
+  directApply: true,
+  applicationContact: {
+    '@type': 'ContactPoint',
+    email: 'hangzhou62@gmail.com',
+    contactType: 'application',
+  },
+}));
+
+const jsonLd = [orgLd, siteLd, ...jobLd];
 ---
 
 <!DOCTYPE html>
@@ -18,17 +81,51 @@ const pathname = Astro.url.pathname;
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
+    <meta name="description" content={desc} />
+    <link rel="canonical" href={canonical} />
+
+    <!-- hreflang: tell search engines about the bilingual alternates -->
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="zh" href={zhUrl} />
+    <link rel="alternate" hreflang="x-default" href={SITE + '/'} />
+
+    <meta name="theme-color" content="#0a0a0f" />
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Geoyuan" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={desc} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={lang === 'zh' ? 'zh_CN' : 'en_US'} />
+    <meta property="og:image" content={OG_IMAGE} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Geoyuan — built for the AI age" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={desc} />
+    <meta name="twitter:image" content={OG_IMAGE} />
+
+    <!-- GEO: explicit hints for AI crawlers -->
+    <meta name="ai:built_for" content="generative engines" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
   </head>
   <body>
     <canvas id="matrix"></canvas>
     <Nav lang={lang} pathname={pathname} />
-    <slot />
+    <main id="main">
+      <slot />
+    </main>
     <Footer lang={lang} />
 
     <script>

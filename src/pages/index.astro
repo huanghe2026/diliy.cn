@@ -1,13 +1,14 @@
 ---
 import Base from '../layouts/Base.astro';
 import Sponsor from '../components/Sponsor.astro';
+import Qualify from '../components/Qualify.astro';
 import { t, type Lang } from '../i18n/ui';
 
 const lang: Lang = 'en';
 const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Radare2', 'Wireshark', 'Burp Suite', 'Linux', 'Docker', 'Git', 'tmux', 'neovim'];
 ---
 
-<Base lang={lang} title="diliy.cn/ — Geoyuan Team">
+<Base lang={lang} title="diliy.cn/ — Geoyuan Team" description="Geoyuan — a borderless, AI-native dev crew building toward a network state. Take the AI-age qualification challenge to prove you belong and apply.">
   <section class="hero">
     <div class="container">
       <div class="hero-content">
@@ -24,6 +25,8 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
       </div>
     </div>
   </section>
+
+  <Qualify lang={lang} />
 
   <section id="about">
     <div class="container">
@@ -85,6 +88,19 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
       <div class="stack-grid">
         {stack.map((s) => <span class="stack-tag">{s}</span>)}
       </div>
+    </div>
+  </section>
+
+  <section id="geo">
+    <div class="container">
+      <div class="section-label">{t(lang, 'geo_label')}</div>
+      <h2>{t(lang, 'geo_title')}</h2>
+      <p style="color: var(--muted); max-width: 620px;">{t(lang, 'geo_desc')}</p>
+      <ul class="geo-list">
+        <li>{t(lang, 'geo_p1')}</li>
+        <li>{t(lang, 'geo_p2')}</li>
+        <li>{t(lang, 'geo_p3')}</li>
+      </ul>
     </div>
   </section>
 

@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# GEO: let AI crawlers read the machine-friendly summary
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: Google-Extended
+User-agent: ClaudeBot
+User-agent: PerplexityBot
+Allow: /
+Allow: /llms.txt
+
+Sitemap: https://diliy.cn/sitemap.xml
