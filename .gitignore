@@ -9,6 +9,7 @@ dist/
 _astro/
 blog/
 blogs/
+qa/
 team/
 test/
 zh/
