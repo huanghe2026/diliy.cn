@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -42,7 +43,17 @@ func DefaultConfig() Config {
 	}
 	model := os.Getenv("GEOYUAN_LLM_MODEL")
 	if model == "" {
-		model = "gpt-4o-mini"
+		// 根据 BaseURL 自动选合适的默认 model
+		switch {
+		case strings.Contains(baseURL, "deepseek"):
+			model = "deepseek-flash"
+		case strings.Contains(baseURL, "anthropic"):
+			model = "claude-3-5-sonnet-latest"
+		case strings.Contains(baseURL, "openai"):
+			model = "gpt-4o-mini"
+		default:
+			model = "deepseek-flash"
+		}
 	}
 	timeout := 30 * time.Second
 	if t := os.Getenv("GEOYUAN_LLM_TIMEOUT"); t != "" {
@@ -77,20 +88,27 @@ func New(cfg Config) *Generator {
 // 如果 LLM 返回题目数不足，会用 fallback 补全到 count。
 func (g *Generator) Generate(ctx context.Context, count int) ([]questions.Question, error) {
 	if g.cfg.APIKey == "" {
+		log.Printf("[questiongen] no API key → fallback %d", count)
 		return fallbackQuestions(count), nil
 	}
 	qs, err := g.callLLM(ctx, count)
 	if err != nil {
+		log.Printf("[questiongen] LLM error → fallback %d: %v", count, err)
 		return fallbackQuestions(count), nil
 	}
+	log.Printf("[questiongen] LLM returned %d valid (requested %d)", len(qs), count)
+
 	// 补全：LLM 少生成的用 fallback 补齐
 	if len(qs) < count {
-		fb := fallbackQuestions(count - len(qs))
+		need := count - len(qs)
+		fb := fallbackQuestions(need)
 		qs = append(qs, fb...)
+		log.Printf("[questiongen] fallback padded %d → %d total", need, len(qs))
 	}
 	// 超了就截断
 	if len(qs) > count {
 		qs = qs[:count]
+		log.Printf("[questiongen] trimmed %d → %d", len(qs), count)
 	}
 	return qs, nil
 }
