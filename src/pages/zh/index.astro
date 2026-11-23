@@ -2,6 +2,7 @@
 import Base from '../../layouts/Base.astro';
 import Sponsor from '../../components/Sponsor.astro';
 import Qualify from '../../components/Qualify.astro';
+import SshHero from '../../components/SshHero.astro';
 import { t, type Lang } from '../../i18n/ui';
 
 const lang: Lang = 'zh';
@@ -90,6 +91,8 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
       </div>
     </div>
   </section>
+
+  <SshHero lang={lang} />
 
   <section id="geo">
     <div class="container">

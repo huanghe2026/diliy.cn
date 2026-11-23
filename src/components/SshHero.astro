@@ -1,0 +1,386 @@
+---
+import { t, type Lang } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<section id="ssh-hero" class="ssh-section">
+  <div class="container ssh-grid">
+    <!-- 左边：介绍 -->
+    <div class="ssh-text">
+      <div class="section-label">{t(lang, 'ssh_label')}</div>
+      <h2>
+        <span class="ssh-title-neon">{t(lang, 'ssh_title')}</span>
+      </h2>
+      <p class="ssh-lead">{t(lang, 'ssh_lead')}</p>
+
+      <div class="ssh-features">
+        <div class="ssh-feature">
+          <span class="feat-icon">{t(lang, 'ssh_feat1_icon')}</span>
+          <div>
+            <div class="feat-title">{t(lang, 'ssh_feat1_title')}</div>
+            <div class="feat-desc">{t(lang, 'ssh_feat1_desc')}</div>
+          </div>
+        </div>
+        <div class="ssh-feature">
+          <span class="feat-icon">{t(lang, 'ssh_feat2_icon')}</span>
+          <div>
+            <div class="feat-title">{t(lang, 'ssh_feat2_title')}</div>
+            <div class="feat-desc">{t(lang, 'ssh_feat2_desc')}</div>
+          </div>
+        </div>
+        <div class="ssh-feature">
+          <span class="feat-icon">{t(lang, 'ssh_feat3_icon')}</span>
+          <div>
+            <div class="feat-title">{t(lang, 'ssh_feat3_title')}</div>
+            <div class="feat-desc">{t(lang, 'ssh_feat3_desc')}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ssh-cta-row">
+        <a href="ssh://diliy.cn" class="btn btn-primary btn-ssh">
+          <span class="ssh-cmd">{t(lang, 'ssh_cta')}</span>
+        </a>
+        <span class="ssh-cta-hint">{t(lang, 'ssh_cta_hint')}</span>
+      </div>
+    </div>
+
+    <!-- 右边：终端动画 -->
+    <div class="terminal-window">
+      <!-- 窗口顶栏 -->
+      <div class="terminal-bar">
+        <div class="terminal-dots">
+          <span class="dot dot-red"></span>
+          <span class="dot dot-yellow"></span>
+          <span class="dot dot-green"></span>
+        </div>
+        <div class="terminal-title">geoyuan — zsh — 80×24</div>
+        <div class="terminal-refresh">↻</div>
+      </div>
+
+      <!-- 终端内容 -->
+      <div class="terminal-body">
+        <div class="terminal-line">
+          <span class="prompt">root@your-box</span>
+          <span class="sep">:</span>
+          <span class="cwd">~</span>
+          <span class="sep">#</span>
+          <span class="typing-cursor"></span>
+        </div>
+
+        <!-- Line 1: ssh diliy.cn -->
+        <div class="terminal-line" style="animation-delay: 0.5s;">
+          <span class="prompt">root@your-box</span>
+          <span class="sep">:</span>
+          <span class="cwd">~</span>
+          <span class="sep">#</span>
+          <span class="typed-cmd"> ssh diliy.cn</span>
+        </div>
+
+        <!-- Line 2: 连接信息 -->
+        <div class="terminal-line dim" style="animation-delay: 2.0s;">
+          <span>Connecting to diliy.cn:22...</span>
+        </div>
+        <div class="terminal-line dim" style="animation-delay: 2.8s;">
+          <span>Warning: Host key verified (ED25519)</span>
+        </div>
+
+        <!-- Line 3: Geoyuan Banner -->
+        <div class="terminal-line neon-line" style="animation-delay: 3.5s;">
+          <span class="neon-logo">
+             ██████╗ ███████╗ ██╗   ██╗ ██████╗ ██╗   ██╗ ██████╗ ██╗   ██╗
+          </span>
+        </div>
+        <div class="terminal-line neon-line" style="animation-delay: 3.7s;">
+          <span class="neon-logo">
+             ██╔══██╗██╔════╝ ██║   ██║██╔═══██╗██║   ██║██╔═══██╗╚██╗ ██╔╝
+          </span>
+        </div>
+        <div class="terminal-line neon-line" style="animation-delay: 3.9s;">
+          <span class="neon-logo">
+             ██████╔╝█████╗   ██║   ██║██║   ██║██║   ██║██║   ██║ ╚████╔╝
+          </span>
+        </div>
+
+        <!-- Line 4: 欢迎 + 输入用户名 -->
+        <div class="terminal-line" style="animation-delay: 4.5s;">
+          <span class="neon-text">🛰️  Welcome, Traveler. New handle?</span>
+        </div>
+        <div class="terminal-line" style="animation-delay: 5.5s;">
+          <span class="prompt">geoyuan@diliy</span>
+          <span class="sep">:</span>
+          <span class="cwd">~</span>
+          <span class="sep">❯</span>
+          <span class="typed-cmd"> ghost</span>
+        </div>
+
+        <!-- Line 5: AI 开始生成 -->
+        <div class="terminal-line" style="animation-delay: 6.5s;">
+          <span class="neon-text">⚡ AI generating 30 questions...</span>
+          <span class="loader-dots">
+            <span style="animation-delay: 0s;">.</span>
+            <span style="animation-delay: 0.2s;">.</span>
+            <span style="animation-delay: 0.4s;">.</span>
+          </span>
+        </div>
+
+        <!-- Line 6: 答题进行中 (模拟输出) -->
+        <div class="terminal-line" style="animation-delay: 9.0s;">
+          <span class="dim">Q1/30  Which attention variant scales best?</span>
+        </div>
+        <div class="terminal-line" style="animation-delay: 10.0s;">
+          <span class="dim">  A. Multi-Head    ➤  B. Grouped Query    C. Flash    D. Sparse</span>
+        </div>
+
+        <!-- Line 7: 分数 + 通过 -->
+        <div class="terminal-line pass-line" style="animation-delay: 13.0s;">
+          <span class="pass-text">🎉  PASS — 27/30 (90%)</span>
+        </div>
+        <div class="terminal-line" style="animation-delay: 13.5s;">
+          <span class="neon-text">✓ Approved. Joining private chat...</span>
+        </div>
+
+        <!-- Line 8: 在线用户 -->
+        <div class="terminal-line" style="animation-delay: 14.5s;">
+          <span class="dim">[#geoyuan] 👥 Online: nyx, orphan, ghost, +3 more</span>
+        </div>
+      </div>
+
+      <!-- 底部状态条 -->
+      <div class="terminal-footer">
+        <span class="footer-pill">● SSH ESTABLISHED</span>
+        <span class="footer-pill">● AI GENERATOR ONLINE</span>
+        <span class="footer-pill">● ENCRYPTED (ED25519)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .ssh-section {
+    padding: 6rem 0;
+    background: var(--bg);
+    position: relative;
+  }
+  .ssh-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 80% 50%, rgba(199, 125, 255, 0.08), transparent),
+      radial-gradient(ellipse 40% 30% at 20% 50%, rgba(0, 245, 255, 0.06), transparent);
+    pointer-events: none;
+  }
+
+  .ssh-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 4rem;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  @media (max-width: 900px) {
+    .ssh-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── 左侧介绍 ── */
+  .ssh-title-neon {
+    background: linear-gradient(120deg, #c77dff 0%, #00f5ff 50%, #00ff9d 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: neonShift 4s linear infinite;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  }
+  @keyframes neonShift {
+    to { background-position: 200% center; }
+  }
+
+  .ssh-lead {
+    color: var(--muted, #8b8b8b);
+    font-size: 1.05rem;
+    line-height: 1.7;
+    margin: 1.2rem 0 2rem;
+  }
+  .ssh-lead .accent { color: var(--accent); font-weight: 600; }
+
+  .ssh-features {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .ssh-feature {
+    display: flex;
+    gap: 0.8rem;
+    align-items: flex-start;
+    padding: 0.8rem 1rem;
+    border: 1px solid rgba(0, 255, 157, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 255, 157, 0.03);
+    transition: all 0.25s;
+  }
+  .ssh-feature:hover {
+    border-color: rgba(0, 255, 157, 0.35);
+    background: rgba(0, 255, 157, 0.06);
+    transform: translateX(4px);
+  }
+  .feat-icon { font-size: 1.3rem; margin-top: 2px; }
+  .feat-title { color: var(--text); font-weight: 600; font-size: 0.95rem; }
+  .feat-desc { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+
+  .ssh-cta-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .btn-ssh { font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; }
+  .ssh-cta-hint { color: var(--muted); font-size: 0.85rem; }
+
+  /* ── 右侧终端 ── */
+  .terminal-window {
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0d0d12;
+    border: 1px solid rgba(199, 125, 255, 0.2);
+    box-shadow:
+      0 0 0 1px rgba(0, 245, 255, 0.08),
+      0 20px 60px -10px rgba(199, 125, 255, 0.15);
+  }
+
+  .terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: #141420;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .terminal-dots { display: flex; gap: 0.4rem; }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+  }
+  .dot-red { background: #ff5f57; }
+  .dot-yellow { background: #febc2e; }
+  .dot-green { background: #28c840; }
+  .terminal-title {
+    flex: 1;
+    text-align: center;
+    font-size: 0.78rem;
+    color: #666;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .terminal-refresh {
+    color: #666; cursor: pointer; font-size: 0.85rem;
+    transition: color 0.2s;
+  }
+  .terminal-refresh:hover { color: var(--accent); }
+
+  .terminal-body {
+    padding: 1rem 1.2rem;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 0.85rem;
+    line-height: 1.65;
+    min-height: 360px;
+    max-height: 440px;
+    overflow-y: hidden;
+  }
+
+  .terminal-line {
+    opacity: 0;
+    animation: lineFadeIn 0.4s ease-out forwards;
+    white-space: pre;
+    overflow: hidden;
+  }
+  @keyframes lineFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .prompt { color: #00f5ff; font-weight: 600; }
+  .sep    { color: #555; }
+  .cwd    { color: #c77dff; }
+  .typed-cmd { color: #e0e0e0; }
+
+  .typing-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 1rem;
+    background: #00f5ff;
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .dim { color: #666; }
+  .neon-text {
+    color: #00ff9d;
+    text-shadow: 0 0 6px rgba(0, 255, 157, 0.5);
+  }
+
+  .neon-logo {
+    background: linear-gradient(90deg, #ff3864, #ff6ec7, #c77dff, #00f5ff, #00ff9d);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: neonLogoShift 5s linear infinite;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+  }
+  @keyframes neonLogoShift {
+    to { background-position: 300% 0; }
+  }
+
+  .loader-dots span {
+    display: inline-block;
+    color: #00ff9d;
+    animation: loaderPulse 1.2s infinite;
+  }
+  @keyframes loaderPulse {
+    0%, 80%, 100% { opacity: 0.3; }
+    40%           { opacity: 1; }
+  }
+
+  .pass-text {
+    color: #00ff9d;
+    font-weight: 700;
+    text-shadow: 0 0 10px rgba(0, 255, 157, 0.6);
+  }
+  .pass-line {
+    padding: 0.3rem 0.6rem;
+    background: rgba(0, 255, 157, 0.08);
+    border-left: 2px solid #00ff9d;
+    margin-left: -0.6rem;
+  }
+
+  .terminal-footer {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #0f0f1a;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.72rem;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .footer-pill {
+    color: #00ff9d;
+    background: rgba(0, 255, 157, 0.1);
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── 小屏幕适配 ── */
+  @media (max-width: 900px) {
+    .terminal-body { font-size: 0.72rem; }
+    .neon-logo { font-size: 0.58rem; }
+    .terminal-title { display: none; }
+    .ssh-cta-hint { display: none; }
+  }
+</style>
