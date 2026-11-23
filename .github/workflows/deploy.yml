@@ -1,0 +1,44 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Build production
+        run: npm run build
+
+      - name: Deploy via rsync
+        uses: easingthemes/ssh-deploy@v3
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+          REMOTE_PORT: 2222
+          REMOTE_USER: root
+          TARGET: /var/www/diliy.cn
+          SOURCE: dist/
+          ARGS: "-avz --delete"
+
+      - name: Reload nginx
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          port: 2222
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: nginx -s reload
