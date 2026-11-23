@@ -30,7 +30,7 @@ jobs:
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_PORT: 2222
           REMOTE_USER: root
-          TARGET: /var/www/diliy.cn
+          TARGET: /var/www/html/diliy.cn
           SOURCE: dist/
           ARGS: "-avz --delete"
 
@@ -41,4 +41,7 @@ jobs:
           port: 2222
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: nginx -s reload
+          script: |
+            nginx -s reload 2>/dev/null || systemctl reload nginx
+            echo "Deploy complete"
+            curl -sk https://localhost/ -H "Host: diliy.cn" | grep -q sponsor && echo "Verify OK - Sponsor online" || echo "Verify FAIL"
