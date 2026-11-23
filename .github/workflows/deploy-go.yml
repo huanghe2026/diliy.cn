@@ -1,0 +1,90 @@
+name: Deploy Go services (SSH TUI + Quiz API)
+
+on:
+  push:
+    paths:
+      - 'ssh/**'
+      - '.github/workflows/deploy-go.yml'
+  workflow_dispatch:
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'ssh/go.mod'
+          cache: false
+
+      - name: Cross-compile geoyuan-ssh (linux/amd64)
+        run: |
+          cd ssh
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+            go build -ldflags="-s -w" -o geoyuan-ssh .
+          file geoyuan-ssh
+          ls -lh geoyuan-ssh
+
+      - name: Cross-compile geoyuan-api (linux/amd64)
+        run: |
+          cd ssh/cmd/api
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+            go build -ldflags="-s -w" -o ../../geoyuan-api .
+          cd ../..
+          file geoyuan-api
+          ls -lh geoyuan-api
+
+      - name: Deploy SSH TUI binary
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          port: 2222
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            systemctl stop geoyuan-ssh 2>/dev/null || true
+            sleep 1
+            # 写 binary
+            cat > /tmp/deploy_geoyuan_ssh.sh <<'EOF'
+            # （由下面的 scp 写入 binary，这里只是占位）
+            EOF
+
+      - name: SCP binaries + restart services
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          port: 2222
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          scp: true
+          scp_from: ssh/geoyuan-ssh,geoyuan-api
+          scp_to: /tmp/
+          script: |
+            echo "=== Deploy geoyuan-ssh ==="
+            systemctl stop geoyuan-ssh 2>/dev/null || true
+            sleep 1
+            cp /tmp/geoyuan-ssh /opt/geoyuan-ssh/geoyuan-ssh.new
+            chown geoyuan:geoyuan /opt/geoyuan-ssh/geoyuan-ssh.new
+            mv /opt/geoyuan-ssh/geoyuan-ssh.new /opt/geoyuan-ssh/geoyuan-ssh
+            chmod +x /opt/geoyuan-ssh/geoyuan-ssh
+            systemctl start geoyuan-ssh
+            sleep 2
+            systemctl is-active geoyuan-ssh && echo "geoyuan-ssh OK" || echo "geoyuan-ssh FAILED"
+
+            echo "=== Deploy geoyuan-api ==="
+            systemctl stop geoyuan-api 2>/dev/null || true
+            sleep 1
+            cp /tmp/geoyuan-api /opt/geoyuan-api/geoyuan-api.new
+            chown geoyuan:geoyuan /opt/geoyuan-api/geoyuan-api.new
+            mv /opt/geoyuan-api/geoyuan-api.new /opt/geoyuan-api/geoyuan-api
+            chmod +x /opt/geoyuan-api/geoyuan-api
+            systemctl start geoyuan-api
+            sleep 2
+            systemctl is-active geoyuan-api && echo "geoyuan-api OK" || echo "geoyuan-api FAILED"
+
+            echo "=== Health ==="
+            curl -s http://localhost:3002/api/health
+            echo ""
+            ss -tlnp | grep -E ":(22|3002)"
