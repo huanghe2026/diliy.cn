@@ -522,6 +522,18 @@ func (m Model) updateRegister(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	name := strings.TrimSpace(m.nameInput.Value())
+
+	// ── 支持在注册页直接输入 :redeem <token> 跳过注册 ──
+	if strings.HasPrefix(name, ":redeem ") || strings.HasPrefix(name, "/redeem ") ||
+		strings.HasPrefix(name, ":auth ") || strings.HasPrefix(name, "/auth ") {
+		tok := strings.TrimSpace(strings.SplitN(name, " ", 2)[1])
+		nm, ok := m.tryRedeem(tok)
+		if ok {
+			return nm, nil
+		}
+		return nm, cmd
+	}
+
 	if !usernameRe.MatchString(name) {
 		m.inputErr = "用户名不合法：仅支持小写字母、数字、下划线，长度 2-20"
 		return m, cmd
@@ -543,6 +555,117 @@ func (m Model) updateRegister(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusPending}
 	m.startQuiz()
 	return m, nil
+}
+
+// tryRedeem 通用 token 兑换逻辑（注册页 / 重试页 / 聊天室 共用）
+// 返回 (修改后的 Model, 是否成功触发跳转)
+func (m Model) tryRedeem(token string) (Model, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		if m.phase == PhaseRegister {
+			m.inputErr = "📝 用法: :redeem <token>"
+		} else {
+			m.chatLog = append(m.chatLog, chat.Message{
+				Type: chat.MsgSystem, Content: "📝 用法: :redeem <token>", Time: time.Now(),
+			})
+		}
+		return m, false
+	}
+
+	if m.store == nil {
+		return m, false
+	}
+
+	wp, err := m.store.GetWebPassByToken(token)
+	if err != nil || wp == nil {
+		msg := "❌ token 无效或已过期。请在 diliy.cn 重新测试获取新 token。"
+		if m.phase == PhaseRegister {
+			m.inputErr = msg
+		} else {
+			m.chatLog = append(m.chatLog, chat.Message{
+				Type: chat.MsgSystem, Content: msg, Time: time.Now(),
+			})
+		}
+		return m, false
+	}
+
+	if !wp.Passed {
+		msg := fmt.Sprintf("⚠ 该 token 对应的 Web 测试未通过（%d/%d）。", wp.Score, wp.Total)
+		if m.phase == PhaseRegister {
+			m.inputErr = msg
+		} else {
+			m.chatLog = append(m.chatLog, chat.Message{
+				Type: chat.MsgSystem, Content: msg, Time: time.Now(),
+			})
+		}
+		return m, false
+	}
+
+	// ✅ 通过！标记 used + 确保用户存在 + 升级 approved
+	_ = m.store.MarkWebPassUsed(token)
+
+	if m.user == nil {
+		// 新用户：用 web_pass.Username 自动注册
+		name := wp.Username
+		exist, _ := m.store.GetUserByUsername(name)
+		if exist != nil {
+			// 用户名已被别人占（极小概率），用 fp 前缀
+			name = fmt.Sprintf("user_%s", m.fp[:8])
+			for i := 2; ; i++ {
+				if e, _ := m.store.GetUserByUsername(name); e == nil {
+					break
+				}
+				name = fmt.Sprintf("user_%s_%d", m.fp[:8], i)
+			}
+		}
+		uid, err := m.store.CreateUser(name, m.fp)
+		if err != nil {
+			msg := "注册失败：" + err.Error()
+			if m.phase == PhaseRegister {
+				m.inputErr = msg
+			}
+			return m, false
+		}
+		m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusApproved}
+	} else if m.user.Status != store.StatusApproved {
+		_, _ = m.store.DB().Exec("UPDATE users SET status = ? WHERE id = ?", store.StatusApproved, m.user.ID)
+		m.user.Status = store.StatusApproved
+	}
+
+	// 🎉 成功！
+	successMsg := fmt.Sprintf("🎉 兑换成功！Web pass (得分 %d/%d) 已绑定 %s。\n   现在你是 geoyuan 正式成员了 ✨",
+		wp.Score, wp.Total, m.user.Username)
+
+	if m.phase == PhaseRegister {
+		// 注册页直接进欢迎页 → 聊天室
+		m.inputErr = ""
+		m.nameInput.SetValue("")
+		m.chatLog = append(m.chatLog, chat.Message{
+			Type: chat.MsgSystem, Content: successMsg, Time: time.Now(),
+		})
+		m.phase = PhaseWelcome
+		return m, true
+	}
+
+	// 非注册页：发消息 + 进聊天室
+	m.chatLog = append(m.chatLog, chat.Message{
+		Type: chat.MsgSystem, Content: successMsg, Time: time.Now(),
+	})
+
+	if m.ChatHub != nil {
+		m.ChatHub.Broadcast(chat.Message{
+			Type: chat.MsgSystem,
+			Content: fmt.Sprintf("⚡ %s 通过 Web 测试（%d/%d）正式加入 geoyuan！", m.user.Username, wp.Score, wp.Total),
+			Time: time.Now(),
+		})
+	}
+
+	// 如果当前不在聊天室，进入
+	if m.phase != PhaseChat {
+		m.enterChat()
+	}
+
+	return m, true
 }
 
 // ═══════════════════════════════════════════════
@@ -850,12 +973,27 @@ func (m Model) viewWelcome() string {
 func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "left", "up", "h", "k", "tab":
-		m.retrySel = 0
+		if m.retrySel > 0 {
+			m.retrySel--
+		}
 	case "right", "down", "l", "j":
-		m.retrySel = 1
+		if m.retrySel < 2 {
+			m.retrySel++
+		}
 	case "enter":
 		if m.retrySel == 0 {
 			m.startQuiz()
+			return m, nil
+		} else if m.retrySel == 1 {
+			// 退回注册页（支持 :redeem token）
+			ti := textinput.New()
+			ti.Placeholder = "输入 :redeem <token> 或新用户名"
+			ti.CharLimit = 120
+			ti.Prompt = "> "
+			ti.Focus()
+			m.nameInput = ti
+			m.inputErr = ""
+			m.phase = PhaseRegister
 			return m, nil
 		}
 		m.Done = true
@@ -873,10 +1011,11 @@ func (m Model) viewRetry() string {
 		m.user.Username,
 	)))
 
-	b.WriteString("\n  是否现在重新测试？\n\n")
+	b.WriteString("\n  你可以：\n\n")
 
 	labels := []string{
 		"    🎯  重新挑战 AI 题目",
+		"    🪙  用 Web token 兑换 (:redeem <token>)",
 		"    🚪  退出连接",
 	}
 	for i, l := range labels {
@@ -947,50 +1086,8 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				content := strings.Join(parts[2:], " ")
 				m.ChatHub.SendPrivate(m.user.ID, m.user.Username, toName, content)
 			}
-		case ":redeem", ":auth":
-			// Web 通过后用 token 解锁
-			if len(parts) < 2 {
-				m.chatLog = append(m.chatLog, chat.Message{
-					Type:    chat.MsgSystem,
-					Content: "📝 用法: :redeem <token>  （从 diliy.cn Web 端测试通过后获取）",
-					Time:    time.Now(),
-				})
-			} else if m.store != nil && m.user != nil {
-				token := parts[1]
-				wp, err := m.store.GetWebPassByToken(token)
-				if err != nil || wp == nil {
-					m.chatLog = append(m.chatLog, chat.Message{
-						Type:    chat.MsgSystem,
-						Content: "❌ token 无效或已过期。请在 diliy.cn 重新测试获取新 token。",
-						Time:    time.Now(),
-					})
-				} else if !wp.Passed {
-					m.chatLog = append(m.chatLog, chat.Message{
-						Type:    chat.MsgSystem,
-						Content: fmt.Sprintf("⚠ 该 token 对应的 Web 测试未通过（%d/%d）。", wp.Score, wp.Total),
-						Time:    time.Now(),
-					})
-				} else {
-					// 标记 used + 升级 SSH 用户为 approved
-					_ = m.store.MarkWebPassUsed(token)
-					if m.user.Status != store.StatusApproved {
-						_, _ = m.store.DB().Exec("UPDATE users SET status = ? WHERE id = ?", store.StatusApproved, m.user.ID)
-						m.user.Status = store.StatusApproved
-					}
-					m.chatLog = append(m.chatLog, chat.Message{
-						Type:    chat.MsgSystem,
-						Content: fmt.Sprintf("🎉 兑换成功！Web pass (得分 %d/%d, 用户 %s) 已绑定到你。\n   现在你是 geoyuan 正式成员了 ✨", wp.Score, wp.Total, wp.Username),
-						Time:    time.Now(),
-					})
-					if m.ChatHub != nil {
-						m.ChatHub.Broadcast(chat.Message{
-							Type:    chat.MsgSystem,
-							Content: fmt.Sprintf("⚡ %s 通过 Web 测试（%d/%d）正式加入 geoyuan！", m.user.Username, wp.Score, wp.Total),
-							Time:    time.Now(),
-						})
-					}
-				}
-			}
+		case ":redeem", "/redeem", ":auth", "/auth":
+			m, _ = m.tryRedeem(strings.Join(parts[1:], " "))
 		default:
 			m.chatLog = append(m.chatLog, chat.Message{
 				Type:    chat.MsgSystem,
