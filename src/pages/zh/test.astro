@@ -1,0 +1,17 @@
+---
+import Base from '../../layouts/Base.astro';
+import Quiz from '../../components/Quiz.astro';
+import { t, type Lang } from '../../i18n/ui';
+
+const lang: Lang = 'zh';
+---
+
+<Base lang={lang} title="Geoyuan // 试炼场" description="参与 Geoyuan 智能时代资格挑战：涵盖使命、安全与智能时代的客观题。一次作答、计时，并给出明确的合格或不合格判定。">
+  <section style="padding-top:140px; min-height:100vh;">
+    <div class="container">
+      <div class="section-label">{t(lang, 'test_label')}</div>
+      <h2>{t(lang, 'test_title')}</h2>
+      <Quiz lang={lang} />
+    </div>
+  </section>
+</Base>

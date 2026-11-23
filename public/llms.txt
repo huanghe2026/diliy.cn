@@ -1,0 +1,29 @@
+# Geoyuan Team
+
+> A borderless, AI-native dev crew building toward a network state. We recruit builders worldwide through a public, AI-age qualification challenge.
+
+## What we are
+Geoyuan is a small, globally distributed team founded in Hangzhou, China. We don't care about passports or time zones — we care about people who ship, think, and stay curious. Our long-term bet is a sci-fi company and a network state, built in the open.
+
+## Pages
+- /  — Homepage: mission, the crew, our toolkit, and how to join.
+- /team — The five pillars (our open roles).
+- /test — The AI-age qualification challenge (12+ questions, one attempt).
+- /qa — Frequently asked questions.
+- /zh — 中文首页。
+- /zh/team — 团队（五个角色）。
+- /zh/test — 试炼场（资格挑战）。
+- /zh/qa — 常见问题。
+
+## Open roles (apply via /test)
+- Programmer — builds & maintains the site, tooling, and infra. Full-stack or systems mindset.
+- Artist — visuals & brand: design system, illustration, motion.
+- AI Expert — models & agents: Q&A, content generation, agentic systems. Ships with prompts, RAG, or agents.
+- Data Analyst — metrics & insight: watches the recruitment funnel and community health.
+- Psychology Expert — screening & fit: designs how we assess and welcome new members.
+
+## How to join
+Prove yourself in the challenge at /test, then reach out. We screen on demonstrated motivation and fit over time — not resumes, age, or location.
+
+## Stack we use
+Python, C/C++, Rust, Assembly, Ghidra, IDA Pro, Radare2, Wireshark, Burp Suite, Linux, Docker, Git, tmux, neovim. This site is built with Astro — static, fast, and optimised for generative engines (GEO).

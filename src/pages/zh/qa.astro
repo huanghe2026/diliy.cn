@@ -1,0 +1,33 @@
+---
+import Base from '../../layouts/Base.astro';
+import Faq from '../../components/Faq.astro';
+import { faq } from '../../data/faq';
+import { t, type Lang } from '../../i18n/ui';
+
+const lang: Lang = 'zh';
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faq.map((item) => ({
+    '@type': 'Question',
+    name: item.q[lang],
+    acceptedAnswer: { '@type': 'Answer', text: item.a[lang] },
+  })),
+};
+---
+
+<Base lang={lang} title="Geoyuan // 问答" description="关于 Geoyuan 的常见问题——我们是谁、如何加入、资格挑战、五个角色，以及我们如何保护你的隐私。">
+  <section style="padding-top:140px; min-height:100vh;">
+    <div class="container">
+      <div class="section-label">{t(lang, 'qa_label')}</div>
+      <h2>{t(lang, 'qa_title')}</h2>
+      <p class="tagline" style="margin-bottom:40px;">{t(lang, 'qa_intro')}</p>
+      <Faq lang={lang} />
+      <div class="center-col" style="margin-top:40px;">
+        <a class="btn btn-primary" href="/zh/test">{t(lang, 'cta_join')} → /test</a>
+      </div>
+    </div>
+  </section>
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
+</Base>

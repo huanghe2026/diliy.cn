@@ -1,0 +1,33 @@
+{
+  "name": "geoyuan-site",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "manual-build": "bash scripts/manual-build.sh",
+    "post-build": "bash scripts/post-build.sh",
+    "og": "node -e \"require('sharp')('public/og.svg').png().toFile('public/og.png').then(i=>console.log('og.png', i.width+'x'+i.height))\""
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@esbuild/linux-x64": "^0.28.2",
+    "@rollup/rollup-linux-x64-gnu": "4.16.4",
+    "astro": "^3.6.5",
+    "esbuild-wasm": "^0.28.2",
+    "sharp": "^0.35.5",
+    "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.20.2": true,
+    "@swc/core@1.4.14": true
+  },
+  "devDependencies": {
+    "@astrojs/compiler-binding": "^0.3.2",
+    "@rolldown/binding-linux-x64-gnu": "^1.0.0"
+  }
+}

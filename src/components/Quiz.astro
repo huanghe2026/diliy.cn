@@ -1,0 +1,279 @@
+---
+import type { Lang } from '../i18n/ui';
+import { t } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+
+// API base（开发时覆盖为 localhost:3001，生产由 Nginx 代理到 Go API）
+const API_BASE = import.meta.env.DEV
+  ? 'http://localhost:3001'
+  : '/api';
+---
+
+<div class="quiz-wrap" id="quiz">
+  <div id="quiz-start" class="center-col">
+    <p class="tagline" style="margin-bottom:28px;">{t(lang, 'test_intro')}</p>
+    <div id="quiz-user-form" style="margin-bottom:16px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <input id="quiz-username" class="btn btn-ghost" style="padding:8px 14px; border:1px solid var(--border); background:transparent; color:var(--fg); width:200px;" placeholder={lang === 'zh' ? '用户名（用于 SSH 关联）' : 'Username (for SSH linkup)'} />
+      <input id="quiz-email" class="btn btn-ghost" style="padding:8px 14px; border:1px solid var(--border); background:transparent; color:var(--fg); width:220px;" placeholder={lang === 'zh' ? '邮箱（可选）' : 'Email (optional)'} />
+    </div>
+    <button class="btn btn-primary" id="quiz-start-btn">{t(lang, 'test_start')}</button>
+  </div>
+
+  <div id="quiz-game" class="hidden">
+    <div class="quiz-meta">
+      <span><span id="quiz-progress-text"></span></span>
+      <span class="timer" id="quiz-timer"></span>
+    </div>
+    <div class="progress"><span id="quiz-progress-bar"></span></div>
+    <div id="quiz-question"></div>
+    <div class="q-nav">
+      <button class="btn btn-ghost" id="quiz-prev">{t(lang, 'test_prev')}</button>
+      <button class="btn btn-primary" id="quiz-next">{t(lang, 'test_next')}</button>
+      <button class="btn btn-primary hidden" id="quiz-submit">{t(lang, 'test_submit')}</button>
+    </div>
+  </div>
+
+  <div id="quiz-result" class="hidden"></div>
+</div>
+
+<script>
+  const lang = document.documentElement.lang === 'zh' ? 'zh' : 'en';
+
+  const TOTAL_TIME = 360; // 6 分钟
+  const API_BASE = import.meta.env.DEV
+    ? 'http://localhost:3001'
+    : '/api';
+
+  const STORE_KEY = 'geoyuan_test_v1';
+
+  const elStart = document.getElementById('quiz-start') as HTMLElement;
+  const elGame = document.getElementById('quiz-game') as HTMLElement;
+  const elResult = document.getElementById('quiz-result') as HTMLElement;
+  const elStartBtn = document.getElementById('quiz-start-btn') as HTMLButtonElement;
+  const elQuestion = document.getElementById('quiz-question') as HTMLElement;
+  const elProgressText = document.getElementById('quiz-progress-text') as HTMLElement;
+  const elProgressBar = document.getElementById('quiz-progress-bar') as HTMLElement;
+  const elTimer = document.getElementById('quiz-timer') as HTMLElement;
+  const elPrev = document.getElementById('quiz-prev') as HTMLButtonElement;
+  const elNext = document.getElementById('quiz-next') as HTMLButtonElement;
+  const elSubmit = document.getElementById('quiz-submit') as HTMLButtonElement;
+  const elUsername = document.getElementById('quiz-username') as HTMLInputElement;
+  const elEmail = document.getElementById('quiz-email') as HTMLInputElement;
+
+  // ---- state ----
+  interface Q { q: string; options: string[]; id: string }
+  let questions: Q[] = [];
+  let sessionId = '';
+  let answers: number[] = [];
+  let current = 0;
+  let timeLeft = TOTAL_TIME;
+  let timerId: number | undefined;
+  let userData = { username: '', email: '' };
+
+  // ---- API calls ----
+  async function fetchQuestions(): Promise<void> {
+    const resp = await fetch(`${API_BASE}/quiz/questions`, { method: 'POST' });
+    if (!resp.ok) throw new Error('quiz fetch failed');
+    const data = await resp.json();
+    questions = data.questions as Q[];
+    sessionId = data.session_id as string;
+  }
+
+  async function submitQuiz(auto: boolean = false): Promise<void> {
+    if (timerId) clearInterval(timerId);
+    const body = {
+      username: userData.username,
+      email: userData.email,
+      session_id: sessionId,
+      answers,
+    };
+    let data: any;
+    try {
+      const resp = await fetch(`${API_BASE}/quiz/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      data = await resp.json();
+    } catch (e) {
+      showResult({ score: 0, total: questions.length, passed: false, reviews: [], token: '', message: 'Server error' }, auto);
+      return;
+    }
+    // 生成 review 显示（后端 session 过期时也能返回基本结果）
+    const reviews = questions.map((q, i) => ({
+      q: q.q,
+      correct: i < answers.length && answers[i] >= 0 && false, // 简化：客户端不验正确答案
+      explain: '',
+    }));
+    showResult(
+      {
+        score: data.score ?? 0,
+        total: data.total ?? questions.length,
+        passed: !!data.passed,
+        reviews,
+        token: data.token ?? '',
+        message: data.message ?? '',
+      },
+      auto
+    );
+  }
+
+  // ---- render ----
+  function renderQuestion() {
+    const q = questions[current];
+    elProgressText.textContent = `${current + 1} / ${questions.length}`;
+    elProgressBar.style.width = `${((current + 1) / questions.length) * 100}%`;
+
+    const optsHtml = q.options
+      .map(
+        (o, i) => `
+        <label class="q-option ${answers[current] === i ? 'selected' : ''}" data-i="${i}">
+          <input type="radio" name="q" value="${i}" ${answers[current] === i ? 'checked' : ''} />
+          <span>${String.fromCharCode(65 + i)}. ${o}</span>
+        </label>`
+      )
+      .join('');
+
+    elQuestion.innerHTML = `
+      <div class="q-card">
+        <div class="q-text">❓ ${q.q}</div>
+        <div class="q-options">${optsHtml}</div>
+      </div>`;
+
+    elQuestion.querySelectorAll('.q-option').forEach((node) => {
+      node.addEventListener('click', (e) => {
+        const i = Number((node as HTMLElement).dataset.i);
+        answers[current] = i;
+        elQuestion.querySelectorAll('.q-option').forEach((n) => n.classList.remove('selected'));
+        (node as HTMLElement).classList.add('selected');
+      });
+    });
+
+    elPrev.disabled = current === 0;
+    elPrev.style.visibility = current === 0 ? 'hidden' : 'visible';
+    const last = current === questions.length - 1;
+    elNext.classList.toggle('hidden', last);
+    elSubmit.classList.toggle('hidden', !last);
+  }
+
+  function startTimer() {
+    timeLeft = TOTAL_TIME;
+    renderTimer();
+    timerId = window.setInterval(() => {
+      timeLeft--;
+      renderTimer();
+      if (timeLeft <= 0) {
+        clearInterval(timerId);
+        submitQuiz(true);
+      }
+    }, 1000);
+  }
+  function renderTimer() {
+    const m = Math.floor(timeLeft / 60);
+    const s = String(timeLeft % 60).padStart(2, '0');
+    elTimer.textContent = `⏱ ${m}:${s}`;
+    elTimer.classList.toggle('warn', timeLeft <= 30);
+  }
+
+  function showResult(r: { score: number; total: number; passed: boolean; reviews: any[]; token: string; message: string }, auto = false) {
+    elGame.classList.add('hidden');
+    elStart.classList.add('hidden');
+    elResult.classList.remove('hidden');
+
+    const verdict = r.passed
+      ? `<div class="result-verdict pass">✓ ${lang === 'zh' ? '通过！' : 'PASSED!'}</div>`
+      : `<div class="result-verdict fail">✕ ${lang === 'zh' ? '未通过' : 'FAILED'}</div>`;
+
+    const sshBlock = r.passed
+      ? `<div style="margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:8px; background:rgba(66,133,244,0.06);">
+          <div style="font-weight:bold; margin-bottom:8px; color:var(--fg);">🎉 ${lang === 'zh' ? '恭喜！你的 SSH 聊天室邀请码：' : 'Congratulations! Your SSH chat invite token:'}</div>
+          <div style="font-family:monospace; font-size:14px; padding:10px; background:rgba(0,0,0,0.3); border-radius:4px; word-break:break-all; color:#4fc3f7;" id="token-display">${r.token}</div>
+          <div style="margin-top:10px; font-size:13px; color:var(--muted);">
+            ${lang === 'zh'
+              ? '复制 token，SSH 连接后在聊天室输入 <code style="color:#4fc3f7; background:rgba(0,0,0,0.2); padding:1px 6px; border-radius:3px;">/redeem 你的token</code> 即可解锁'
+              : 'Copy the token, SSH in, then run <code style="color:#4fc3f7; background:rgba(0,0,0,0.2); padding:1px 6px; border-radius:3px;">/redeem YOUR_TOKEN</code> in the chat room'}
+          </div>
+          <div style="margin-top:10px;">
+            <a href="ssh://ssh@diliy.cn" class="btn btn-primary" style="display:inline-block;">
+              ${lang === 'zh' ? '🚀 连接 SSH' : '🚀 SSH in'}
+            </a>
+          </div>
+        </div>`
+      : '';
+
+    elResult.innerHTML = `
+      <div class="result-card ${r.passed ? 'is-pass' : 'is-fail'}">
+        <div class="section-label" style="justify-content:center;display:flex;">${auto ? (lang === 'zh' ? '⏰ 时间到' : '⏰ Time up') : (lang === 'zh' ? '📊 测试结果' : '📊 Result')}</div>
+        ${verdict}
+        <div class="result-score">${r.score}${r.total > 0 ? '/' + r.total : ''}</div>
+        <div class="stat-label">${lang === 'zh' ? '得分' : 'Score'}</div>
+        ${sshBlock}
+        ${r.message ? `<div style="margin-top:12px; color:var(--muted);">${r.message}</div>` : ''}
+        <div style="margin-top:18px;"><button class="lang-toggle" id="quiz-retry">${lang === 'zh' ? '🔄 再试一次' : '🔄 Try again'}</button></div>
+      </div>`;
+
+    document.getElementById('quiz-retry')?.addEventListener('click', () => location.reload());
+  }
+
+  // ---- entry point ----
+  async function start() {
+    userData.username = (elUsername.value || '').trim().toLowerCase();
+    userData.email = (elEmail.value || '').trim();
+    if (!userData.username) {
+      alert(lang === 'zh' ? '请填写用户名' : 'Please enter a username');
+      return;
+    }
+
+    try {
+      elStartBtn.textContent = lang === 'zh' ? '生成题目中...' : 'Generating questions...';
+      await fetchQuestions();
+    } catch (e: any) {
+      elStartBtn.textContent = lang === 'zh' ? '开始' : 'Start';
+      alert(lang === 'zh'
+        ? '题库暂不可用，请稍后重试或直接 SSH 连接。'
+        : 'Quiz service unavailable. Please try later or SSH in directly.');
+      return;
+    }
+
+    answers = questions.map(() => -1);
+    current = 0;
+    elStart.classList.add('hidden');
+    elResult.classList.add('hidden');
+    elGame.classList.remove('hidden');
+    renderQuestion();
+    startTimer();
+  }
+
+  // bind
+  document.getElementById('quiz')?.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  let restored: any = null;
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) restored = JSON.parse(raw);
+  } catch {}
+
+  if (restored && restored.passed) {
+    // 已通过过，显示结果 + 继续 SSH 指引
+    questions = restored.questions || [];
+    sessionId = restored.sessionId || '';
+    elStart.classList.add('hidden');
+    showResult({ score: restored.score, total: restored.total || questions.length, passed: true, reviews: [], token: restored.token || '', message: '' });
+  } else if (restored && !restored.passed) {
+    elStartBtn.addEventListener('click', start);
+  } else {
+    elStartBtn.addEventListener('click', start);
+  }
+
+  elPrev.addEventListener('click', () => {
+    if (current > 0) { current--; renderQuestion(); }
+  });
+  elNext.addEventListener('click', () => {
+    if (current < questions.length - 1) { current++; renderQuestion(); }
+  });
+  elSubmit.addEventListener('click', () => submitQuiz(false));
+</script>

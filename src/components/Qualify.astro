@@ -1,0 +1,80 @@
+---
+import type { Lang } from '../i18n/ui';
+import { t } from '../i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const testHref = lang === 'zh' ? '/zh/test' : '/test';
+const teamHref = lang === 'zh' ? '/zh/team' : '/team';
+const applyHref = `mailto:${t(lang, 'join_email')}?subject=${encodeURIComponent(
+  lang === 'zh' ? 'Geoyuan 申请' : 'Geoyuan application'
+)}`;
+---
+
+<section id="qualify" class="qualify-section">
+  <div class="container">
+    <div class="qualify-card" id="qualify-card" data-test={testHref} data-team={teamHref} data-apply={applyHref}>
+      <div class="qualify-icon" id="qualify-icon">…</div>
+      <div class="qualify-body">
+        <div class="qualify-label">{t(lang, 'qualify_label')}</div>
+        <div class="qualify-title" id="qualify-title">{t(lang, 'qualify_loading')}</div>
+        <p class="qualify-sub" id="qualify-sub"></p>
+        <div class="qualify-actions" id="qualify-actions"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { ui } from '../i18n/ui';
+  import { QUALIFIED_SCORE } from '../data/quiz';
+  const STORE_KEY = 'geoyuan_test_v1';
+  const QUALIFIED = QUALIFIED_SCORE;
+  const lang = document.documentElement.lang === 'zh' ? 'zh' : 'en';
+  const T = ui[lang];
+
+  const card = document.getElementById('qualify-card') as HTMLElement;
+  const iconEl = document.getElementById('qualify-icon') as HTMLElement;
+  const titleEl = document.getElementById('qualify-title') as HTMLElement;
+  const subEl = document.getElementById('qualify-sub') as HTMLElement;
+  const actionsEl = document.getElementById('qualify-actions') as HTMLElement;
+  const testHref = card.dataset.test!;
+  const teamHref = card.dataset.team!;
+  const applyHref = card.dataset.apply!;
+
+  function btn(href: string, label: string, primary = true) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.className = 'btn ' + (primary ? 'btn-primary' : 'btn-ghost');
+    a.textContent = label;
+    return a;
+  }
+
+  let result: { score: number; role: string } | null = null;
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) result = JSON.parse(raw);
+  } catch {}
+
+  if (!result) {
+    iconEl.textContent = '?';
+    card.dataset.state = 'unknown';
+    titleEl.textContent = T.qualify_unknown_title;
+    subEl.textContent = T.qualify_unknown_sub;
+    actionsEl.append(btn(testHref, T.qualify_cta_test));
+  } else if (result.score >= QUALIFIED) {
+    iconEl.textContent = '✓';
+    card.dataset.state = 'pass';
+    titleEl.textContent = T.qualify_pass_title;
+    subEl.textContent = `${T.qualify_pass_sub} ${result.score}% · ${result.role}`;
+    actionsEl.append(btn(applyHref, T.qualify_apply), btn(teamHref, T.qualify_see_team, false));
+  } else {
+    iconEl.textContent = '✕';
+    card.dataset.state = 'fail';
+    titleEl.textContent = T.qualify_fail_title;
+    subEl.textContent = `${T.qualify_fail_sub} ${result.score}% · ${result.role}`;
+    actionsEl.append(btn(testHref, T.qualify_retry), btn(teamHref, T.qualify_see_team, false));
+  }
+</script>
