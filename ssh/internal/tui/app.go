@@ -10,6 +10,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -41,179 +42,12 @@ const (
 )
 
 // ═══════════════════════════════════════════════
-//  🎨 Color Palette
+//  🎨 Color Palette — 全部移到 styles.go 统一管理
 // ═══════════════════════════════════════════════
-var (
-	// Logo & Brand
-	colorBrand      = lipgloss.Color("213") // 亮紫粉
-	colorBrandDark  = lipgloss.Color("177") // 深紫粉
-	colorAccent     = lipgloss.Color("51")  // 青蓝
-	colorGold       = lipgloss.Color("220") // 金色
-	colorSuccess    = lipgloss.Color("42")  // 成功绿
-	colorDanger     = lipgloss.Color("203") // 危险红
-	colorWarn       = lipgloss.Color("220") // 警告金
-
-	// Neutrals
-	colorText       = lipgloss.Color("250") // 主文字
-	colorMuted      = lipgloss.Color("240") // 次要文字
-	colorDim        = lipgloss.Color("237") // 更暗
-	colorBorder     = lipgloss.Color("245") // 边框
-	colorBorderSub  = lipgloss.Color("238") // 次级边框
-
-	// Chat message colors
-	colorSelf       = lipgloss.Color("51")  // 自己发的消息（青蓝）
-	colorOther      = lipgloss.Color("213") // 他人消息（紫粉）
-	colorDM         = lipgloss.Color("183") // 私聊（洋红）
-	colorSystem     = lipgloss.Color("243") // 系统消息（灰）
-)
 
 // ═══════════════════════════════════════════════
-//  📐 Reusable Styles
+//  📐 Reusable Styles — 全部移到 styles.go 统一管理
 // ═══════════════════════════════════════════════
-var (
-	styleLogo = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorBrand).
-			Padding(0, 1)
-
-	styleHeader = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorBrand).
-			MarginBottom(1)
-
-	styleHeaderBar = lipgloss.NewStyle().
-			Foreground(colorMuted)
-
-	styleCard = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBorder).
-			Padding(1, 2).
-			MarginBottom(1)
-
-	styleCardAccent = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBrand).
-			Padding(1, 2).
-			MarginBottom(1)
-
-	styleCardSuccess = lipgloss.NewStyle().
-			Border(lipgloss.DoubleBorder()).
-			BorderForeground(colorSuccess).
-			Padding(1, 2).
-			MarginBottom(1)
-
-	styleCardDanger = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorDanger).
-			Padding(1, 2).
-			MarginBottom(1)
-
-	styleCenter = lipgloss.NewStyle().
-			Align(lipgloss.Center).
-			Width(80)
-
-	styleHint = lipgloss.NewStyle().
-			Foreground(colorMuted).
-			MarginTop(1).
-			Faint(true)
-
-	styleErr = lipgloss.NewStyle().
-			Foreground(colorDanger).
-			MarginTop(1)
-
-	styleSuccessText = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorSuccess)
-
-	styleDangerText = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorDanger)
-
-	styleCursor = lipgloss.NewStyle().
-			Foreground(colorAccent).
-			Bold(true)
-
-	styleQuestion = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorText).
-			PaddingLeft(1).
-			MarginBottom(1)
-
-	styleOption = lipgloss.NewStyle().
-			Foreground(colorText)
-
-	styleOptionSelected = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("0")).
-			Background(colorAccent).
-			Bold(true).
-			Padding(0, 1)
-
-	styleMarkOK = lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
-	styleMarkBad = lipgloss.NewStyle().Bold(true).Foreground(colorDanger)
-	styleExplain = lipgloss.NewStyle().Foreground(colorMuted).PaddingLeft(4)
-
-	styleOnlineChip = lipgloss.NewStyle().
-			Foreground(colorSuccess).
-			Bold(true)
-
-	styleOfflineChip = lipgloss.NewStyle().
-			Foreground(colorDim)
-
-	styleScoreBig = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorGold).
-			Align(lipgloss.Center)
-
-	// 聊天消息样式（renderChatMessage 里用）
-	styleChatSelfR = lipgloss.NewStyle().Foreground(colorSelf).Bold(true)
-	styleChatOtherR = lipgloss.NewStyle().Foreground(colorOther).Bold(true)
-	styleChatDMR   = lipgloss.NewStyle().Foreground(colorDM).Bold(true).Italic(true)
-	styleChatSystemR = lipgloss.NewStyle().Foreground(colorSystem)
-
-	// 渐变边框颜色（模拟彩虹边框）
-	rainbowColors = []lipgloss.Color{
-		lipgloss.Color("213"), // 紫粉
-		lipgloss.Color("212"),
-		lipgloss.Color("211"),
-		lipgloss.Color("177"),
-		lipgloss.Color("183"),
-		lipgloss.Color("51"),  // 青蓝
-		lipgloss.Color("45"),
-		lipgloss.Color("42"),  // 绿
-	}
-)
-
-// geoyuanLogo 品牌 logo
-const geoyuanLogo = `
-  ██████╗ ███████╗ ██╗   ██╗ ██████╗ ██╗   ██╗ ██████╗ ██╗   ██╗
-  ██╔══██╗██╔════╝ ██║   ██║██╔═══██╗██║   ██║██╔═══██╗╚██╗ ██╔╝
-  ██████╔╝█████╗   ██║   ██║██║   ██║██║   ██║██║   ██║ ╚████╔╝ 
-  ██╔══██╗██╔══╝   ╚██╗ ██╔╝██║   ██║██║   ██║██║   ██║  ╚██╔╝  
-  ██║  ██║███████╗  ╚████╔╝ ╚██████╔╝╚██████╔╝╚██████╔╝   ██║   
-  ╚═╝  ╚═╝╚══════╝   ╚═══╝   ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝   
-       ♥  AI Team · SSH Recruitment Challenge ♥`
-
-// congratulationsArt 恭喜画面
-const congratulationsArt = `
-  ╔═══════════════════════════════════════════════╗
-  ║                                               ║
-  ║   🎉  CONGRATULATIONS  🎉                     ║
-  ║                                               ║
-  ║       You've been promoted to                 ║
-  ║            GEORUAN MEMBER                     ║
-  ║                                               ║
-  ╚═══════════════════════════════════════════════╝
-`
-
-const thankYouArt = `
-  ┌─────────────────────────────────────────┐
-  │                                         │
-  │         Thanks for trying!              │
-  │                                         │
-  │     ✦   Keep learning, keep hacking!   ✦
-  │                                         │
-  └─────────────────────────────────────────┘
-`
 
 var usernameRe = regexp.MustCompile(`^[a-z0-9_]{2,20}$`)
 
@@ -475,43 +309,50 @@ func (m Model) userInfoString() string {
 }
 
 // ═══════════════════════════════════════════════
-//  📝 注册页
+//  📝 注册页 — 霓虹 Cyberpunk 风
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar("· 加入 geoyuan ·"))
+	b.WriteString(m.headerBar("· Join GEORUAN ·"))
 
-	// Logo
-	b.WriteString(geoyuanLogo + "\n\n")
+	// 🌈 彩虹渐变 Geoyuan Logo
+	b.WriteString(RenderRainbowLogo())
+	b.WriteString(RenderNeonTagline())
 
-	// 欢迎卡片
-	welcomeText := styleCenter.Render(
-		fmt.Sprintf("%s\n\n%s",
-			styleHeader.Render("Welcome, traveler."),
-			styleHint.Render("You've found the gateway to geoyuan — an exclusive team of AI engineers.\n"+
-				"Pass the recruitment test to earn your place."),
-		),
-	)
-	b.WriteString(welcomeText + "\n\n")
+	b.WriteString("\n")
 
-	// 连接信息
+	// 🛰️ 欢迎卡 (glow box)
+	b.WriteString(RenderWelcomeCard())
+	b.WriteString("\n")
+
+	// 📍 连接信息
 	if m.remoteIP != "" {
-		b.WriteString(styleHint.Render(fmt.Sprintf("📍 Connecting from %s", m.remoteIP)))
+		ipInfo := fmt.Sprintf("  📍 Connected from %s", m.remoteIP)
 		if m.remoteHost != "" && m.remoteHost != m.remoteIP {
-			b.WriteString(styleHint.Render(fmt.Sprintf("  ·  %s", m.remoteHost)))
+			ipInfo += fmt.Sprintf("  ·  %s", m.remoteHost)
 		}
+		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render(ipInfo))
 		b.WriteString("\n\n")
 	}
 
-	// 注册卡片
-	cardContent := "首次连接，请创建一个你的唯一用户名：\n\n" + m.nameInput.View()
-	b.WriteString(styleCardAccent.Render(cardContent))
+	// 📝 注册输入卡
+	ti := m.nameInput
+	ti.Prompt = "  " + lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true).Render(">") + " "
+	nameInputLine := ti.View()
+
+	registerCard := fmt.Sprintf(
+		"  %s\n\n  %s\n\n  %s",
+		lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("⚡  New Traveler Registration"),
+		lipgloss.NewStyle().Foreground(cMuted).Render("  Enter your unique handle (2-20 chars, a-z/0-9/_)"),
+		nameInputLine,
+	)
+	b.WriteString(styleCardAccent.Render(registerCard))
 
 	if m.inputErr != "" {
-		b.WriteString("\n" + styleErr.Render("⚠  "+m.inputErr))
+		b.WriteString("\n  " + styleErr.Render("✗  "+m.inputErr))
 	}
 
-	b.WriteString("\n" + styleHint.Render("回车确认 · Ctrl+C 退出"))
+	b.WriteString("\n  " + lipgloss.NewStyle().Foreground(cMuted).Render("↵ Enter to confirm  ·  Ctrl+C to exit  ·  Try :redeem <token>"))
 	return b.String()
 }
 
@@ -708,35 +549,40 @@ func (m Model) viewQuiz() string {
 	q := m.questions[m.cursor]
 	total := len(m.questions)
 
-	b.WriteString(m.headerBar(fmt.Sprintf("· AI 招募测试  第 %d / %d ·", m.cursor+1, total)))
+	b.WriteString(m.headerBar(fmt.Sprintf("·  AI RECRUITMENT QUIZ  ·  %d / %d", m.cursor+1, total)))
 
-	// 进度条
+	// 📊 霓虹进度条
 	b.WriteString(renderFancyProgress(m.cursor+1, total))
 	b.WriteString("\n\n")
 
-	// 题目卡片
-	card := fmt.Sprintf("%s\n\n", styleQuestion.Render(fmt.Sprintf("❓ %d. %s", m.cursor+1, q.Q)))
+	// ❓ 题目卡片
+	card := fmt.Sprintf("%s\n\n", styleQuestion.Render(fmt.Sprintf("❓  Q%d.  %s", m.cursor+1, q.Q)))
 
 	for i, opt := range q.Options {
 		var line string
 		letter := string(rune('A' + i))
 		marker := "  "
 		if i == m.selected {
-			line = styleOptionSelected.Render(fmt.Sprintf("%s %s. %s", marker, letter, opt))
+			line = styleOptionSelected.Render(fmt.Sprintf("%s ➤ %s. %s", marker, letter, opt))
 		} else {
-			line = styleOption.Render(fmt.Sprintf("%s %s. %s", marker, letter, opt))
+			line = styleOption.Render(fmt.Sprintf("%s    %s. %s", marker, letter, opt))
 		}
 		card += line + "\n"
 	}
 
 	b.WriteString(styleCard.Render(card))
 	b.WriteString("\n")
-	b.WriteString(styleHint.Render("↑↓/jk 选择 · 1-4 直选并下一题 · 回车确认 · Ctrl+C 退出"))
+	b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  ↑↓/jk to navigate  ·  1-4 to select & advance  ·  ⏎ to confirm  ·  Ctrl+C to exit"))
 	return b.String()
 }
 
 func (m *Model) startQuiz() {
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	// 用 generator 配置的 timeout，fallback 60s
+	timeout := 60 * time.Second
+	if m.generator != nil {
+		timeout = m.generator.Cfg().Timeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	var qs []questions.Question
@@ -744,6 +590,7 @@ func (m *Model) startQuiz() {
 		var err error
 		qs, err = m.generator.Generate(ctx, QuizCount)
 		if err != nil {
+			log.Printf("[tui] startQuiz fallback: %v", err)
 			qs = questions.All()
 		}
 	} else {
@@ -793,7 +640,7 @@ func (m *Model) finishQuiz() {
 }
 
 // ═══════════════════════════════════════════════
-//  🏆 结果页
+//  🏆 结果页 — 霓虹风
 // ═══════════════════════════════════════════════
 func (m Model) viewResult() string {
 	var b strings.Builder
@@ -803,40 +650,42 @@ func (m Model) viewResult() string {
 		pct = m.score * 100 / total
 	}
 
-	b.WriteString(m.headerBar("· 测试结果 ·"))
+	b.WriteString(m.headerBar("·  RECRUITMENT RESULT  ·"))
 
 	if m.passed {
-		// ── 恭喜画面 ──
-		b.WriteString(styleCenter.Render(congratulationsArt))
+		// ── PASS: 霓虹恭喜画面 ──
+		b.WriteString(RenderCongratsPass(m.score, total))
 		b.WriteString("\n")
-
-		// 分数仪表盘
 		b.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
 		b.WriteString("\n\n")
 
 		b.WriteString(styleSuccessText.Render(
-			"  ✓ 你已被正式邀请加入 geoyuan team！\n"+
-				"  ✓ 私密聊天室已为你解锁\n"+
-				"  ✓ 所有成员都在等你",
+			"  ✓  Welcome aboard, "+m.user.Username+"!\n"+
+				"  ✓  Private chat room unlocked\n"+
+				"  ✓  All members are waiting for you",
 		))
 		b.WriteString("\n\n")
-		b.WriteString(styleHint.Render("按 回车 进入私密聊天室  ·  q/esc 退出"))
+		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter to enter private chat  ·  q/esc to exit"))
 	} else {
-		// ── 未通过 ──
-		b.WriteString(styleCenter.Render(thankYouArt))
+		// ── FAIL: 霓虹未通过画面 ──
+		b.WriteString(RenderTryAgainFail(m.score, total))
 		b.WriteString("\n")
 		b.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
 		b.WriteString("\n\n")
 
 		b.WriteString(styleDangerText.Render(
-			fmt.Sprintf("  ✗ 很遗憾未达通过线（需要 ≥ %d 分）", PassThreshold)))
+			fmt.Sprintf("  ✗  Not yet — need ≥ %d / %d to pass", PassThreshold, total)))
 		b.WriteString("\n\n")
-		b.WriteString(styleHint.Render("断开后重新 ssh 连接即可再次测试  ·  回车/q 退出"))
+		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  Reconnect via ssh diliy.cn to try again  ·  ⏎/q to exit"))
 	}
 
 	// 答题回顾（前 8 题）
 	b.WriteString("\n\n")
-	review := "━━━ 答题回顾（前 8 题）━━━\n\n"
+	reviewHeader := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render(
+		"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  QUIZ REVIEW (first 8)  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n",
+	)
+	b.WriteString(reviewHeader)
+	b.WriteString("\n")
 	limit := 8
 	if len(m.questions) < limit {
 		limit = len(m.questions)
@@ -845,22 +694,21 @@ func (m Model) viewResult() string {
 		q := m.questions[i]
 		ans := m.answers[i]
 		ok := ans == q.Answer
-		mark := styleMarkBad.Render("✗")
+		mark := styleMarkBad.Render("  ✗")
 		if ok {
-			mark = styleMarkOK.Render("✓")
+			mark = styleMarkOK.Render("  ✓")
 		}
-		review += fmt.Sprintf("%s %d. %s\n", mark, i+1, q.Q)
+		b.WriteString(fmt.Sprintf("%s  %d. %s\n", mark, i+1, q.Q))
 		if !ok {
-			review += styleExplain.Render(fmt.Sprintf(
-				"你的答案: %s   正确答案: %s   💡 %s",
-				letter(ans), letter(q.Answer), q.Explain)) + "\n"
+			b.WriteString(styleExplain.Render(fmt.Sprintf(
+				"  Your answer: %s   Correct: %s   💡 %s",
+				letter(ans), letter(q.Answer), q.Explain)) + "\n")
 		}
-		review += "\n"
+		b.WriteString("\n")
 	}
 	if len(m.questions) > limit {
-		review += styleHint.Render(fmt.Sprintf("... 其余 %d 题已省略", len(m.questions)-limit))
+		b.WriteString(styleHint.Render(fmt.Sprintf("  ... and %d more questions omitted", len(m.questions)-limit)))
 	}
-	b.WriteString(review)
 
 	return b.String()
 }
@@ -935,34 +783,34 @@ func renderFancyProgress(cur, total int) string {
 // ═══════════════════════════════════════════════
 func (m Model) viewWelcome() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar("· 欢迎回来 ·"))
+	b.WriteString(m.headerBar("·  WELCOME BACK  ·"))
+
+	// 🌈 小彩虹 logo
+	b.WriteString(RenderRainbowLogo() + "\n")
 
 	n, _ := m.store.CountApproved()
+	totalAttempts, _ := m.store.CountAttemptsForUser(m.user.ID)
 
-	welcomeText := fmt.Sprintf(`
-  ╭──────────────────────────────────────────╮
-  │  🌟  Welcome back, %-22s│
-  │                                          │
-  │  You are a certified geoyuan member.     │
-  │                                          │
-  │  📊 Team size: %d members                │
-  │  🕐  Just now connected                  │
-  │                                          │
-  │  ── Entering private chat room ──       │
-  ╰──────────────────────────────────────────╯
-`, m.user.Username, n)
-
-	// 渲染
-	b.WriteString(styleCenter.Render(welcomeText))
-	b.WriteString("\n\n")
-
-	if m.remoteIP != "" {
-		info := fmt.Sprintf("📍 %s", m.remoteIP)
-		if m.remoteHost != "" {
-			info += fmt.Sprintf("  ·  %s", m.remoteHost)
-		}
-		b.WriteString(styleHint.Render(info) + "\n")
+	// 🧑 用户详情卡
+	fp := m.fp
+	if len(fp) > 32 {
+		fp = fp[:32] + "..."
 	}
+	userCard := RenderUserCard(
+		m.user.Username,
+		fp,
+		m.remoteIP,
+		true, // approved
+		n,
+		totalAttempts,
+	)
+	b.WriteString(styleCardSuccess.Render(userCard))
+
+	// ✨ 即将进入聊天室
+	b.WriteString("\n  " + lipgloss.NewStyle().
+		Foreground(cNeonCyan).
+		Bold(true).
+		Render("⚡  Entering private chat room..."))
 
 	return b.String()
 }

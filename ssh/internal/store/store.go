@@ -197,6 +197,13 @@ func (s *Store) CountApproved() (int, error) {
 	return n, err
 }
 
+// CountAttemptsForUser 返回某用户答题次数
+func (s *Store) CountAttemptsForUser(userID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM attempts WHERE user_id = ?`, userID).Scan(&n)
+	return n, err
+}
+
 // ─── Web Pass （Web 端答题通过） ───
 
 // CreateWebPass 创建一条 Web 端通过记录，返回 token

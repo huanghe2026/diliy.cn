@@ -83,6 +83,11 @@ func New(cfg Config) *Generator {
 	}
 }
 
+// Cfg 返回当前配置（外部读取 timeout 等）
+func (g *Generator) Cfg() Config {
+	return g.cfg
+}
+
 // Generate 生成指定数量的 AI/LLM/Agent 四选一题目。
 // API 不可用时自动降级到 fallback 题库。
 // 如果 LLM 返回题目数不足，会用 fallback 补全到 count。
