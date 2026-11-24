@@ -203,8 +203,9 @@ func (s *Server) handleSession(ch ssh.Channel, requests <-chan *ssh.Request, fp 
 		model,
 		tea.WithInput(ch),
 		tea.WithOutput(ch),
-		// NOTE: 不用 WithAltScreen() — 让内容直接输出到主屏幕，用户可滚动
-		// 之前加了 alt screen 但内容有 30+ 行，小终端（24行）会被截断
+		tea.WithAltScreen(), // 🔥 接管整个终端窗口 = 任何尺寸都"全屏"
+		// viewRegister() 已按 termHeight 三层自适应裁剪内容
+		// 不会截断 — 因为小终端用精简版（≤15行），大终端用完整版
 	)
 
 	// 限制单次会话时长，避免空闲/无人值守连接长期占用资源

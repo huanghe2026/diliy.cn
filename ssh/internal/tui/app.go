@@ -61,6 +61,10 @@ type Model struct {
 	user      *store.User
 	phase     Phase
 
+	// 🧭 终端尺寸（WindowSizeMsg 注入）— 用来让 View() 自适应
+	termWidth  int
+	termHeight int
+
 	// 连接信息（UI 展示用）
 	remoteIP   string
 	remoteHost string
@@ -127,19 +131,22 @@ func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User
 	return m
 }
 
-// Init 实现 tea.Model
+// Init 实现 tea.Model — 初始拿到终端尺寸 + 阶段启动命令
 func (m Model) Init() tea.Cmd {
+	// 先触发一个 WindowSizeMsg 来拿终端尺寸
+	cmds := []tea.Cmd{tea.EnterAltScreen}
+
 	switch m.phase {
 	case PhaseRegister:
-		return textinput.Blink
+		cmds = append(cmds, textinput.Blink)
 	case PhaseChat:
-		return tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+		cmds = append(cmds, textinput.Blink, receiveMsgs(m.sub))
 	case PhaseWelcome:
-		return tea.Tick(1800*time.Millisecond, func(t time.Time) tea.Msg {
+		cmds = append(cmds, tea.Tick(1800*time.Millisecond, func(t time.Time) tea.Msg {
 			return welcomeDoneMsg{}
-		})
+		}))
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 type (
@@ -164,6 +171,16 @@ func receiveMsgs(sub *chat.Subscription) tea.Cmd {
 // Update 实现 tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	// 🧭 终端尺寸变化 — Bubble Tea 自动发
+	case tea.WindowSizeMsg:
+		m.termWidth = msg.Width
+		m.termHeight = msg.Height
+		return m, nil
+
+	case tea.KeyMsg:
+		return m.handleKey(msg)
+
 	case welcomeDoneMsg:
 		if m.phase == PhaseWelcome {
 			m.phase = PhaseChat
@@ -177,37 +194,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chatClosedMsg:
 		m.Done = true
 		return m, tea.Quit
+	}
+	return m, nil
+}
 
-	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
-			m.cleanupChat()
-			m.Done = true
-			return m, tea.Quit
-		}
-		switch m.phase {
-		case PhaseRegister:
-			return m.updateRegister(msg)
-		case PhaseQuiz:
-			return m.updateQuiz(msg)
-		case PhaseResult:
-			if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
-				if m.passed {
-					m.enterChat()
-					return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
-				}
-				m.Done = true
-				return m, tea.Quit
-			}
-		case PhaseWelcome:
-			if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
+// handleKey 分发键盘事件到对应阶段
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		m.cleanupChat()
+		m.Done = true
+		return m, tea.Quit
+	}
+	switch m.phase {
+	case PhaseRegister:
+		return m.updateRegister(msg)
+	case PhaseQuiz:
+		return m.updateQuiz(msg)
+	case PhaseResult:
+		if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
+			if m.passed {
 				m.enterChat()
 				return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
 			}
-		case PhaseRetry:
-			return m.updateRetry(msg)
-		case PhaseChat:
-			return m.updateChat(msg)
+			m.Done = true
+			return m, tea.Quit
 		}
+	case PhaseWelcome:
+		if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
+			m.enterChat()
+			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+		}
+	case PhaseRetry:
+		return m.updateRetry(msg)
+	case PhaseChat:
+		return m.updateChat(msg)
 	}
 	return m, nil
 }
@@ -311,50 +331,90 @@ func (m Model) userInfoString() string {
 }
 
 // ═══════════════════════════════════════════════
-//  📝 注册页 — 精简版，保证 24 行终端也能完整显示
+//  📝 注册页 — 按终端高度自适应，任何尺寸都全屏完美
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
-
-	// ① 彩虹 Geoyuan logo — 顶置！第一眼就看到
-	b.WriteString(RenderRainbowLogo())
-	b.WriteString(RenderNeonTagline())
-	b.WriteString("\n")
-
-	// ② headerBar（紧凑版）
-	b.WriteString(m.headerBarCompact())
-
-	// ③ 欢迎语（一行版）
-	welcomeLine := "  🛰️  Welcome, Buddy — you've found the gateway to " + RainbowText("Geoyuan")
-	b.WriteString(welcomeLine + "\n\n")
-
-	// ④ 连接信息
-	if m.remoteIP != "" {
-		loc := m.remoteIP
-		switch {
-		case m.remoteIP == "127.0.0.1" || m.remoteIP == "::1":
-			loc = "localhost"
-		case m.geoLoc != "":
-			loc = m.geoLoc + " · " + m.remoteIP
-		}
-		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render(fmt.Sprintf("  📍 %s", loc)))
-		b.WriteString("\n\n")
+	h := m.termHeight
+	if h == 0 {
+		h = 24 // 默认 24 行，兼容 WindowSizeMsg 还没到的情况
 	}
 
-	// ⑤ 注册输入（精简卡）
+	switch {
+	case h >= 30:
+		// ╔══════════════════════════════════════╗
+		// ║ 完整版（Logo + Tagline + Header +    ║
+		// ║  Welcome卡 + 连接 + 注册）          ║
+		// ╚══════════════════════════════════════╝
+		b.WriteString(RenderRainbowLogo())
+		b.WriteString(RenderNeonTagline())
+		b.WriteString("\n")
+		b.WriteString(m.headerBarCompact())
+		b.WriteString(RenderWelcomeCard())
+		b.WriteString("\n")
+		b.WriteString(m.connectionLine())
+		b.WriteString("\n\n")
+		b.WriteString(m.registerInput())
+
+	case h >= 20:
+		// ╔══════════════════════════════════════╗
+		// ║ 中版（Logo + Header + 一行欢迎 +     ║
+		// ║ 连接 + 注册）                        ║
+		// ╚══════════════════════════════════════╝
+		b.WriteString(RenderRainbowLogo())
+		b.WriteString("\n")
+		b.WriteString(m.headerBarCompact())
+		b.WriteString(m.oneLineWelcome())
+		b.WriteString("\n\n")
+		b.WriteString(m.connectionLine())
+		b.WriteString("\n\n")
+		b.WriteString(m.registerInput())
+
+	default:
+		// ╔══════════════════════════════════════╗
+		// ║ 最小版（Header + 注册）              ║
+		// ╚══════════════════════════════════════╝
+		b.WriteString(m.headerBarCompact())
+		b.WriteString(m.registerInput())
+	}
+
+	return b.String()
+}
+
+// connectionLine 一行版连接信息
+func (m Model) connectionLine() string {
+	if m.remoteIP == "" {
+		return ""
+	}
+	loc := m.remoteIP
+	switch {
+	case m.remoteIP == "127.0.0.1" || m.remoteIP == "::1":
+		loc = "localhost"
+	case m.geoLoc != "":
+		loc = m.geoLoc + " · " + m.remoteIP
+	}
+	return lipgloss.NewStyle().Foreground(cNeonCyan).Render("  📍 " + loc)
+}
+
+// oneLineWelcome 一行欢迎（Geoyuan 彩虹高亮）
+func (m Model) oneLineWelcome() string {
+	return "  🛰️  Welcome, Buddy — you've found the gateway to " + RainbowText("Geoyuan")
+}
+
+// registerInput 注册输入区
+func (m Model) registerInput() string {
+	var b strings.Builder
 	ti := m.nameInput
 	ti.Prompt = "  " + lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true).Render(">") + " "
 
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("  ⚡  Register"))
-	b.WriteString("\n\n")
-	b.WriteString("  " + ti.View())
+	b.WriteString("\n\n  ")
+	b.WriteString(ti.View())
 
 	if m.inputErr != "" {
 		b.WriteString("\n  " + styleErr.Render("✗  "+m.inputErr))
 	}
-
 	b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(cMuted).Render("↵ confirm  ·  Ctrl+C exit  ·  :redeem <token>"))
-
 	return b.String()
 }
 
