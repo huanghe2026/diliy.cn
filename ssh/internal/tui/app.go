@@ -19,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"geoyuan.cn/ssh/internal/card"
 	"geoyuan.cn/ssh/internal/chat"
 	"geoyuan.cn/ssh/internal/questiongen"
 	"geoyuan.cn/ssh/internal/questions"
@@ -39,9 +40,9 @@ const (
 	PhaseWelcome
 	PhaseRetry
 	PhaseChat
-	PhaseMenu      // 主菜单（Welcome 后进入）
-	PhaseMintCard  // Mint GeoyuanCard 视图
-	PhaseMyCards   // 我的卡片列表
+	PhaseMenu     // 主菜单（Welcome 后进入）
+	PhaseMintCard // Mint GeoyuanCard 视图
+	PhaseMyCards  // 我的卡片列表
 )
 
 // ═══════════════════════════════════════════════
@@ -55,7 +56,9 @@ const (
 var usernameRe = regexp.MustCompile(`^[a-z0-9_]{2,20}$`)
 
 // ═══════════════════════════════════════════════
-//  Model
+//
+//	Model
+//
 // ═══════════════════════════════════════════════
 type Model struct {
 	store     *store.Store
@@ -97,8 +100,9 @@ type Model struct {
 	chatInput textinput.Model
 
 	// 🎴 Mint — GeoyuanCard 铸造视图
-	mintView PhaseMint
-	menuCursor int // 主菜单当前选中项
+	mintView    PhaseMint
+	menuCursor  int           // 主菜单当前选中项
+	cardService *card.Service // Polygon GeoyuanCard 链上服务（nil 时只做 H3 预览）
 
 	// 状态
 	Done   bool
@@ -109,27 +113,27 @@ type Model struct {
 }
 
 // New 构造 TUI Model
-func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User, chatHub *chat.Hub, ip, host, geo string) Model {
+func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User, chatHub *chat.Hub, cardService *card.Service, ip, host, geo string) Model {
 	m := Model{
-		store:      s,
-		generator:  gen,
-		fp:         fp,
-		user:       user,
-		ChatHub:    chatHub,
-		remoteIP:   ip,
-		remoteHost: host,
-		geoLoc:     geo,
+		store:       s,
+		generator:   gen,
+		fp:          fp,
+		user:        user,
+		ChatHub:     chatHub,
+		cardService: cardService,
+		remoteIP:    ip,
+		remoteHost:  host,
+		geoLoc:      geo,
 	}
 	switch {
 	case user != nil && user.Status == store.StatusApproved:
 		m.phase = PhaseWelcome
-		m.enterChat()
 	case user != nil:
 		m.phase = PhaseRetry
 	default:
 		ti := textinput.New()
 		ti.Placeholder = "2-20 位小写字母/数字/下划线"
-		ti.CharLimit = 20
+		ti.CharLimit = 120 // 同时容纳 :redeem + 32 字符 token；用户名校验仍限 20
 		ti.Prompt = "用户名: "
 		ti.Focus()
 		m.nameInput = ti
@@ -160,6 +164,10 @@ type (
 	chatMsgWrapper struct{ Msg chat.Message }
 	chatClosedMsg  struct{}
 	welcomeDoneMsg struct{}
+	mintResultMsg  struct {
+		result *card.MintResult
+		err    error
+	}
 )
 
 func receiveMsgs(sub *chat.Subscription) tea.Cmd {
@@ -202,6 +210,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chatClosedMsg:
 		m.Done = true
 		return m, tea.Quit
+	case mintResultMsg:
+		m.mintView = m.mintView.WithResult(msg.result, msg.err)
+		return m, nil
 	}
 	return m, nil
 }
@@ -221,8 +232,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case PhaseResult:
 		if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
 			if m.passed {
-				m.enterChat()
-				return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+				m.phase = PhaseMenu
+				m.menuCursor = 0
+				return m, nil
 			}
 			m.Done = true
 			return m, tea.Quit
@@ -296,7 +308,9 @@ func (m *Model) enterChat() {
 }
 
 // ═══════════════════════════════════════════════
-//  🏗️  Header Bar (所有页面共享)
+//
+//	🏗️  Header Bar (所有页面共享)
+//
 // ═══════════════════════════════════════════════
 func (m Model) headerBar(title string) string {
 	var b strings.Builder
@@ -352,7 +366,9 @@ func (m Model) userInfoString() string {
 }
 
 // ═══════════════════════════════════════════════
-//  📝 注册页 — 按终端高度自适应，任何尺寸都全屏完美
+//
+//	📝 注册页 — 按终端高度自适应，任何尺寸都全屏完美
+//
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
@@ -464,6 +480,11 @@ func (m Model) updateRegister(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		tok := strings.TrimSpace(strings.SplitN(name, " ", 2)[1])
 		nm, ok := m.tryRedeem(tok)
 		if ok {
+			if nm.phase == PhaseWelcome {
+				return nm, tea.Tick(1800*time.Millisecond, func(t time.Time) tea.Msg {
+					return welcomeDoneMsg{}
+				})
+			}
 			return nm, nil
 		}
 		return nm, cmd
@@ -561,8 +582,9 @@ func (m Model) tryRedeem(token string) (Model, bool) {
 			}
 			return m, false
 		}
-		m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusApproved}
-	} else if m.user.Status != store.StatusApproved {
+		m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusPending}
+	}
+	if m.user.Status != store.StatusApproved {
 		_, _ = m.store.DB().Exec("UPDATE users SET status = ? WHERE id = ?", store.StatusApproved, m.user.ID)
 		m.user.Status = store.StatusApproved
 	}
@@ -589,9 +611,9 @@ func (m Model) tryRedeem(token string) (Model, bool) {
 
 	if m.ChatHub != nil {
 		m.ChatHub.Broadcast(chat.Message{
-			Type: chat.MsgSystem,
+			Type:    chat.MsgSystem,
 			Content: fmt.Sprintf("⚡ %s 通过 Web 测试（%d/%d）正式加入 geoyuan！", m.user.Username, wp.Score, wp.Total),
-			Time: time.Now(),
+			Time:    time.Now(),
 		})
 	}
 
@@ -604,7 +626,9 @@ func (m Model) tryRedeem(token string) (Model, bool) {
 }
 
 // ═══════════════════════════════════════════════
-//  📋 答题页
+//
+//	📋 答题页
+//
 // ═══════════════════════════════════════════════
 func (m Model) updateQuiz(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if len(msg.Runes) > 0 {
@@ -734,7 +758,9 @@ func (m *Model) finishQuiz() {
 }
 
 // ═══════════════════════════════════════════════
-//  🏆 结果页 — 霓虹风
+//
+//	🏆 结果页 — 霓虹风
+//
 // ═══════════════════════════════════════════════
 func (m Model) viewResult() string {
 	var b strings.Builder
@@ -754,12 +780,12 @@ func (m Model) viewResult() string {
 		b.WriteString("\n\n")
 
 		b.WriteString(styleSuccessText.Render(
-			"  ✓  Welcome aboard, "+m.user.Username+"!\n"+
-				"  ✓  Private chat room unlocked\n"+
+			"  ✓  Welcome aboard, " + m.user.Username + "!\n" +
+				"  ✓  Private chat room unlocked\n" +
 				"  ✓  All members are waiting for you",
 		))
 		b.WriteString("\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter to enter private chat  ·  q/esc to exit"))
+		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter to open main menu  ·  q/esc to exit"))
 	} else {
 		// ── FAIL: 霓虹未通过画面 ──
 		b.WriteString(RenderTryAgainFail(m.score, total))
@@ -873,7 +899,9 @@ func renderFancyProgress(cur, total int) string {
 }
 
 // ═══════════════════════════════════════════════
-//  👋 欢迎页（已通过用户）
+//
+//	👋 欢迎页（已通过用户）
+//
 // ═══════════════════════════════════════════════
 func (m Model) viewWelcome() string {
 	var b strings.Builder
@@ -900,17 +928,19 @@ func (m Model) viewWelcome() string {
 	)
 	b.WriteString(styleCardSuccess.Render(userCard))
 
-	// ✨ 即将进入聊天室
+	// ✨ 即将进入主菜单
 	b.WriteString("\n  " + lipgloss.NewStyle().
 		Foreground(cNeonCyan).
 		Bold(true).
-		Render("⚡  Entering private chat room..."))
+		Render("⚡  Opening main menu..."))
 
 	return b.String()
 }
 
 // ═══════════════════════════════════════════════
-//  🔁 重测选择
+//
+//	🔁 重测选择
+//
 // ═══════════════════════════════════════════════
 func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -973,7 +1003,9 @@ func (m Model) viewRetry() string {
 }
 
 // ═══════════════════════════════════════════════
-//  💬 聊天室
+//
+//	💬 聊天室
+//
 // ═══════════════════════════════════════════════
 func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -1011,9 +1043,9 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.ChatHub != nil {
 				users := m.ChatHub.Users()
 				m.chatLog = append(m.chatLog, chat.Message{
-					Type: chat.MsgSystem,
+					Type:    chat.MsgSystem,
 					Content: fmt.Sprintf("👥 在线 (%d): %s", len(users), strings.Join(users, " · ")),
-					Time: time.Now(),
+					Time:    time.Now(),
 				})
 			}
 		case ":w", ":dm":
@@ -1130,7 +1162,9 @@ func renderChatMessage(msg chat.Message, currentUser *store.User) string {
 }
 
 // ═══════════════════════════════════════════════
-//  🔧 工具函数
+//
+//	🔧 工具函数
+//
 // ═══════════════════════════════════════════════
 func letter(i int) string {
 	if i < 0 || i > 3 {
@@ -1201,7 +1235,7 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		switch m.menuCursor {
 		case 0: // Mint
-			m.mintView = NewPhaseMint(m.remoteIP, m.geoLoc)
+			m.mintView = NewPhaseMint(m.cardService, m.remoteIP, m.geoLoc)
 			m.phase = PhaseMintCard
 			return m, nil
 		case 1: // My Cards
@@ -1228,7 +1262,9 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // ═══════════════════════════════════════════════
-//  🎴 Mint 视图处理器
+//
+//	🎴 Mint 视图处理器
+//
 // ═══════════════════════════════════════════════
 func (m Model) updateMint(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -1241,7 +1277,9 @@ func (m Model) updateMint(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // ═══════════════════════════════════════════════
-//  🃏 My Cards 视图
+//
+//	🃏 My Cards 视图
+//
 // ═══════════════════════════════════════════════
 func (m Model) viewMyCards() string {
 	var b strings.Builder
@@ -1262,7 +1300,7 @@ func (m Model) updateMyCards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.phase = PhaseMenu
 		return m, nil
 	case "enter", " ":
-		m.mintView = NewPhaseMint(m.remoteIP, m.geoLoc)
+		m.mintView = NewPhaseMint(m.cardService, m.remoteIP, m.geoLoc)
 		m.phase = PhaseMintCard
 		return m, nil
 	}

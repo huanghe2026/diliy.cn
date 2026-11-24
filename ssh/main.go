@@ -1,24 +1,33 @@
-// Command geoyuan-ssh 是 geoyuan team AI 招募测试 + 私密聊天室的 SSH 服务入口。
+// Command geoyuan-ssh 是 geoyuan team AI 招募测试 + 私密聊天室 + 链上卡牌 Mint 的 SSH 服务入口。
 //
 // 用法：
 //
 //	GEOYUAN_ADDR=:22 go run .        # 监听 22（需 root / setcap）
 //	go run .                          # 默认监听 :2222
 //
-// 环境变量（AI 题目生成可选配置）：
+// 环境变量：
 //
-//	GEOYUAN_LLM_API_KEY    API Key（设置则启用 AI 动态出题，否则用 fallback 题库）
-//	GEOYUAN_LLM_BASE_URL   API 地址（默认 https://api.openai.com/v1）
-//	GEOYUAN_LLM_MODEL      模型名（默认 gpt-4o-mini）
+//	GEOYUAN_ADDR              监听地址（默认 :2222）
+//	GEOYUAN_DATA_DIR          数据目录（默认 ./data）
+//	GEOYUAN_LLM_API_KEY       API Key（设置则启用 AI 动态出题）
+//	GEOYUAN_LLM_BASE_URL      API 地址（默认 https://api.openai.com/v1）
+//	GEOYUAN_LLM_MODEL         模型名（默认 gpt-4o-mini）
+//	GEOYUAN_RPC_URL           Polygon RPC（默认 Amoy PublicNode）
+//	GEOYUAN_CONTRACT          GeoyuanCard 合约地址
+//	CARD_CHAIN_KEY            部署钱包私钥（用于链上 Mint 签名，空则只做 H3 预览）
 //
-// 数据目录 data/ 下生成 geoyuan.db（SQLite）与 ssh_host_ed25519_key（host key）。
+// 当前会自动加载项目根目录的 .env（如果存在），方便本地开发。
 package main
 
 import (
+	"bufio"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"geoyuan.cn/ssh/internal/card"
+	"geoyuan.cn/ssh/internal/chain"
 	"geoyuan.cn/ssh/internal/chat"
 	"geoyuan.cn/ssh/internal/questiongen"
 	"geoyuan.cn/ssh/internal/sshserver"
@@ -26,6 +35,8 @@ import (
 )
 
 func main() {
+	loadDotEnv()
+
 	addr := os.Getenv("GEOYUAN_ADDR")
 	if addr == "" {
 		addr = ":2222"
@@ -55,8 +66,92 @@ func main() {
 	// 全局聊天室 Hub
 	chatHub := chat.NewHub()
 
-	srv := sshserver.New(st, gen, chatHub, addr)
+	// Polygon RPC + GeoyuanCard 服务（可选，连不上 / 无合约 / 无私钥 都只降级为 H3 预览）
+	cardService := initCardService()
+
+	srv := sshserver.New(st, gen, chatHub, cardService, addr)
 	if err := srv.ListenAndServe(filepath.Join(dataDir, "ssh_host_ed25519_key")); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+// initCardService 尝试初始化 chain + card，失败降级为 nil（TUI 会自动走 H3 预览）
+func initCardService() *card.Service {
+	cfg := chain.DefaultConfig()
+	if cfg.ContractAddr == "" {
+		log.Printf("GeoyuanCard 合约地址未配置（GEOYUAN_CONTRACT），链上 Mint 不可用")
+		return nil
+	}
+	client, err := chain.New(cfg)
+	if err != nil {
+		log.Printf("Polygon RPC 连接失败 (%s)：%v，降级为 H3 预览", cfg.RPCURL, err)
+		return nil
+	}
+	log.Printf("Polygon RPC 已连接 chain_id=%d contract=%s", cfg.ChainID, cfg.ContractAddr)
+
+	privKey := cfg.PrivateKey
+	if privKey == "" {
+		privKey = os.Getenv("CARD_CHAIN_KEY")
+	}
+	svc, err := card.New(client, privKey)
+	if err != nil {
+		log.Printf("GeoyuanCard 服务初始化失败：%v，降级为 H3 预览", err)
+		return nil
+	}
+	if svc.Ready() {
+		log.Printf("GeoyuanCard 链上 Mint 已就绪 signer=%s", svc.FromAddr())
+	} else {
+		log.Printf("GeoyuanCard 服务已加载但无私钥，链上 Mint 仅返回预览")
+	}
+	return svc
+}
+
+// loadDotEnv — 读取项目根目录的 .env（简单 KEY=VALUE 解析，支持 # 注释）
+func loadDotEnv() {
+	candidates := []string{
+		".env",
+		"/home/huanghe/myweb/diliy/.env",
+	}
+	for _, path := range candidates {
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		defer f.Close()
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// 支持 KEY=VALUE 和 KEY: VALUE 两种写法
+			var key, val string
+			if strings.Contains(line, "=") {
+				parts := strings.SplitN(line, "=", 2)
+				key = strings.TrimSpace(parts[0])
+				val = strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+			} else if strings.Contains(line, ":") {
+				parts := strings.SplitN(line, ":", 2)
+				key = strings.TrimSpace(parts[0])
+				val = strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+			} else {
+				continue
+			}
+			// 只注入 geoyuan 相关变量 + Polygon 私钥，避免覆盖其他系统变量
+			if shouldPassToEnv(key) {
+				os.Setenv(key, val)
+			}
+		}
+		log.Printf("已加载 .env: %s", path)
+		return
+	}
+	log.Println("未找到 .env，使用默认环境变量")
+}
+
+// shouldPassToEnv — .env 中只挑 geoyuan / polygon / deploy 相关的变量注入
+func shouldPassToEnv(key string) bool {
+	upper := strings.ToUpper(key)
+	return strings.Contains(upper, "GEOYUAN") ||
+		strings.Contains(upper, "CARD_CHAIN_KEY") ||
+		strings.Contains(upper, "DEPLOY_WALLET")
 }

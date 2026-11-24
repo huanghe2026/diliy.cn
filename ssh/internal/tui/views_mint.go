@@ -2,38 +2,38 @@ package tui
 
 import (
 	"fmt"
-	"math/big"
-	"math/rand"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"geoyuan.cn/ssh/internal/card"
 	"geoyuan.cn/ssh/internal/geo"
 	"geoyuan.cn/ssh/internal/h3"
 )
 
 // PhaseMint — Bubble Tea Mint 视图
 type PhaseMint struct {
-	step         int // 0=预览H3, 1=标题, 2=描述, 3=颜色, 4=确认, 5=完成, 99=退出
-	titleIn      textinput.Model
-	descIn       textinput.Model
-	colorIn      textinput.Model
-	h3Index      uint64
-	lat, lon     float64
-	res          int
-	title, desc  string
-	color        string
-	err          string
-	loading      bool
-	loadingStart time.Time
+	cardService *card.Service
+	step        int // 0=H3预览 1=标题 2=描述 3=颜色 4=确认 5=处理中/完成 99=退出
+	titleIn     textinput.Model
+	descIn      textinput.Model
+	colorIn     textinput.Model
+	h3Index     uint64
+	lat, lon    float64
+	res         int
+	title, desc string
+	color       string
+	err         string
+	minting     bool             // true = 异步链上 Mint 已发送，等结果
+	mintResult  *card.MintResult // 链上返回
+	mintErr     error            // 链上错误
 }
 
 // NewPhaseMint — 初始化 Mint 视图（自动用 IP 做 H3 预览）
-func NewPhaseMint(remoteIP, geoLoc string) PhaseMint {
-	pm := PhaseMint{res: h3.DefaultRes}
+func NewPhaseMint(svc *card.Service, remoteIP, geoLoc string) PhaseMint {
+	pm := PhaseMint{cardService: svc, res: h3.DefaultRes}
 
 	// 从 IP 拿经纬度，拿不到降级杭州
 	lat, lon := geo.LatLonFromIP(remoteIP)
@@ -48,6 +48,7 @@ func NewPhaseMint(remoteIP, geoLoc string) PhaseMint {
 
 	pm.titleIn = textinput.New()
 	pm.titleIn.Placeholder = "Morning Lake Walk"
+	pm.titleIn.CharLimit = 30
 	pm.titleIn.Focus()
 	pm.titleIn.Width = 30
 
@@ -56,22 +57,30 @@ func NewPhaseMint(remoteIP, geoLoc string) PhaseMint {
 	pm.descIn.Width = 40
 
 	pm.colorIn = textinput.New()
-	pm.colorIn.SetValue(randomNeonColor())
+	pm.colorIn.SetValue("#c77dff")
 	pm.colorIn.Width = 10
 
 	return pm
 }
 
-// randomNeonColor — 霓虹调色板随机一个
-func randomNeonColor() string {
-	colors := []string{"#c77dff", "#ff6ec7", "#00f5ff", "#00ff9d", "#ffd700", "#ff3864"}
-	return colors[rand.Intn(len(colors))]
+// WithResult — Model 收到 mintResultMsg 后更新 PhaseMint
+func (p PhaseMint) WithResult(r *card.MintResult, err error) PhaseMint {
+	p.minting = false
+	p.mintResult = r
+	p.mintErr = err
+	if err == nil {
+		p.step = 5
+	} else {
+		p.step = 4 // 失败回到确认页让用户重试
+	}
+	return p
 }
 
 // H3Hex — uint64 → "0x..." hex
-func H3Hex(idx uint64) string {
-	return fmt.Sprintf("0x%x", idx)
-}
+func H3Hex(idx uint64) string { return fmt.Sprintf("0x%x", idx) }
+
+// Done — 退出 Mint 视图时返回 true
+func (p PhaseMint) Done() bool { return p.step == 99 }
 
 // ─── Update ──────────────────────────────────────────────
 
@@ -93,13 +102,15 @@ func (p PhaseMint) Update(msg tea.Msg) (PhaseMint, tea.Cmd) {
 			p.titleIn, cmd = p.titleIn.Update(msg)
 			switch msg.String() {
 			case "enter":
-				if strings.TrimSpace(p.titleIn.Value()) == "" {
-					p.err = "Title can't be empty"
+				if len([]rune(strings.TrimSpace(p.titleIn.Value()))) < 2 {
+					p.err = "Title must be 2-30 characters"
 					return p, nil
 				}
 				p.err = ""
 				p.step = 2
-				return p, nil
+				p.titleIn.Blur()
+				p.descIn.Focus()
+				return p, textinput.Blink
 			case "esc":
 				p.step = 99
 				return p, nil
@@ -111,10 +122,14 @@ func (p PhaseMint) Update(msg tea.Msg) (PhaseMint, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				p.step = 3
-				return p, nil
+				p.descIn.Blur()
+				p.colorIn.Focus()
+				return p, textinput.Blink
 			case "esc":
 				p.step = 1
-				return p, nil
+				p.descIn.Blur()
+				p.titleIn.Focus()
+				return p, textinput.Blink
 			}
 			return p, cmd
 		case 3: // 颜色
@@ -123,29 +138,36 @@ func (p PhaseMint) Update(msg tea.Msg) (PhaseMint, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				p.step = 4
+				p.colorIn.Blur()
 				return p, nil
 			case "esc":
 				p.step = 2
-				return p, nil
+				p.colorIn.Blur()
+				p.descIn.Focus()
+				return p, textinput.Blink
 			}
 			return p, cmd
 		case 4: // 确认
+			if p.minting {
+				return p, nil // 正在异步发交易，忽略按键
+			}
 			switch msg.String() {
 			case "y", "Y":
 				p.title = p.titleIn.Value()
 				p.desc = p.descIn.Value()
 				p.color = p.colorIn.Value()
-				p.loading = true
-				p.loadingStart = time.Now()
+				p.minting = true
+				p.err = ""
 				p.step = 5
-				return p, nil
+				return p, p.doMintCmd()
 			case "esc", "n", "N":
 				p.step = 1
-				return p, nil
+				p.titleIn.Focus()
+				return p, textinput.Blink
 			}
-		case 5: // 完成/loading → Esc 返回 Welcome
+		case 5: // 结果页 — 链上返回 or 离线预览
 			switch msg.String() {
-			case "enter", "esc":
+			case "enter", "esc", "q":
 				p.step = 99
 				return p, nil
 			}
@@ -154,9 +176,24 @@ func (p PhaseMint) Update(msg tea.Msg) (PhaseMint, tea.Cmd) {
 	return p, nil
 }
 
-// Done — 退出 Mint 视图时返回 true
-func (p PhaseMint) Done() bool {
-	return p.step == 99
+// doMintCmd — 异步调用 card.Service.Mint（不阻塞 Bubble Tea 主循环）
+func (p PhaseMint) doMintCmd() tea.Cmd {
+	params := card.MintParams{
+		Lat:         p.lat,
+		Lon:         p.lon,
+		Res:         p.res,
+		Title:       p.title,
+		Description: p.desc,
+		Color:       p.color,
+	}
+	svc := p.cardService
+	return func() tea.Msg {
+		if svc == nil {
+			return mintResultMsg{err: fmt.Errorf("GeoyuanCard 服务不可用（chain 未连接），降级为 H3 预览")}
+		}
+		result, err := svc.Mint(params)
+		return mintResultMsg{result: result, err: err}
+	}
 }
 
 // ─── View ────────────────────────────────────────────────
@@ -165,6 +202,8 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("228")).Bold(true)
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
 	var sb strings.Builder
@@ -176,7 +215,6 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 		sb.WriteString(fmt.Sprintf("  🔷 H3 cell:        %s  (res=%d, ~%.1f km²)\n",
 			H3Hex(p.h3Index), p.res, h3.AreaKm2(p.h3Index)))
 		sb.WriteString(fmt.Sprintf("  📏 Center:          %.4f°N, %.4f°E\n", p.lat, p.lon))
-		// 邻居预览
 		ns := h3.Neighbors(p.h3Index)
 		sb.WriteString(fmt.Sprintf("  🧭 Neighbors:      %d cells (k=1 ring → 7 total)\n", len(ns)))
 		sh := h3.Encode(31.2304, 121.4737, p.res)
@@ -191,7 +229,7 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 		sb.WriteString("  " + cyan.Render("Step 1/3") + "  Card title (2-30 chars)\n\n")
 		sb.WriteString("  > " + p.titleIn.View() + "\n")
 		if p.err != "" {
-			sb.WriteString(dim.Render("  ✗ "+p.err) + "\n")
+			sb.WriteString(red.Render("  ✗ "+p.err) + "\n")
 		}
 
 	case 2:
@@ -208,6 +246,7 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 		sb.WriteString("\n")
 
 	case 4:
+		// 确认页（同时也是错误重试页）
 		sb.WriteString("  " + cyan.Render("Confirm — Mint this card?") + "\n\n")
 		sb.WriteString(fmt.Sprintf("    Title:     %s\n", p.titleIn.Value()))
 		sb.WriteString(fmt.Sprintf("    Desc:      %s\n", p.descIn.Value()))
@@ -215,22 +254,49 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 		sb.WriteString(fmt.Sprintf("    Location:  %s\n", geoLoc))
 		sb.WriteString(fmt.Sprintf("    H3 Cell:   %s (res=%d)\n", H3Hex(p.h3Index), p.res))
 		sb.WriteString(fmt.Sprintf("    Lat/Lon:   %.4f, %.4f\n", p.lat, p.lon))
+		if p.cardService != nil && p.cardService.Ready() {
+			sb.WriteString("    Chain:     " + green.Render("Polygon Amoy (live)") + "\n")
+		} else {
+			sb.WriteString("    Chain:     " + yellow.Render("offline preview") + "\n")
+		}
 		sb.WriteString("\n  [" + green.Render("Y") + "] Yes  [" + dim.Render("Esc") + "] Back\n")
+		if p.mintErr != nil {
+			sb.WriteString(red.Render(fmt.Sprintf("\n  ✗ Previous attempt failed: %v", p.mintErr)) + "\n")
+		}
 
 	case 5:
-		if p.loading {
-			// 简化：本地业务逻辑完成，RPC 还没连 — 展示 preview 结果
-			sb.WriteString(green.Render("  ✅ Card prepared for minting!") + "\n\n")
-			sb.WriteString(fmt.Sprintf("    Title:     %s\n", p.title))
-			sb.WriteString(fmt.Sprintf("    Desc:      %s\n", p.desc))
-			sb.WriteString(fmt.Sprintf("    Color:     %s\n", p.color))
-			sb.WriteString(fmt.Sprintf("    H3 Cell:   %s (unique, no one else can mint here)\n", H3Hex(p.h3Index)))
-			sb.WriteString(fmt.Sprintf("    Lat/Lon:   %.4f°N, %.4f°E\n", p.lat, p.lon))
-			sb.WriteString(fmt.Sprintf("    Owner:     your wallet (connect Polygon RPC)\n\n"))
-			sb.WriteString("  (Online minting needs Polygon RPC + deployed contract)\n")
-			sb.WriteString("  Press " + cyan.Render("Enter") + " or " + dim.Render("Esc") + " to return\n")
-			sb.WriteString(fmt.Sprintf("  Token ID would be: #%s\n", big.NewInt(time.Now().UnixNano()).Text(10)))
+		if p.minting {
+			sb.WriteString(yellow.Render("  ⛓️  Submitting transaction to Polygon Amoy...") + "\n")
+			sb.WriteString(dim.Render("     (this may take 30-60 seconds)") + "\n")
+			sb.WriteString("\n  Press " + dim.Render("Enter/Esc") + " to wait — it keeps going in background\n")
+			return sb.String()
 		}
+		if p.mintErr != nil {
+			sb.WriteString(red.Render("  ✗ Mint failed") + "\n\n")
+			sb.WriteString(fmt.Sprintf("    Reason: %v\n", p.mintErr))
+			sb.WriteString("\n  Press " + cyan.Render("Enter") + " or " + dim.Render("Esc") + " to return\n")
+			return sb.String()
+		}
+		// 成功
+		sb.WriteString(green.Render("  ✅ Card minted successfully on Polygon Amoy!") + "\n\n")
+		if p.mintResult != nil {
+			if p.mintResult.Preview {
+				sb.WriteString(yellow.Render("  (offline preview — contract not ready)") + "\n\n")
+			}
+			sb.WriteString(fmt.Sprintf("    Title:     %s\n", p.mintResult.Title))
+			sb.WriteString(fmt.Sprintf("    Desc:      %s\n", p.mintResult.Description))
+			sb.WriteString(fmt.Sprintf("    Color:     %s\n", p.mintResult.Color))
+			sb.WriteString(fmt.Sprintf("    H3 Cell:   %s\n", H3Hex(p.mintResult.H3Index)))
+			sb.WriteString(fmt.Sprintf("    Lat/Lon:   %.4f, %.4f\n", p.mintResult.Lat, p.mintResult.Lon))
+			if p.mintResult.TokenID != nil && p.mintResult.TokenID.Sign() > 0 {
+				sb.WriteString(fmt.Sprintf("    Token ID:  #%s\n", p.mintResult.TokenID.Text(10)))
+			}
+			if !p.mintResult.Preview {
+				sb.WriteString(fmt.Sprintf("    Tx Hash:   %s\n", p.mintResult.TxHash))
+				sb.WriteString(fmt.Sprintf("    Block:     %d\n", p.mintResult.Block))
+			}
+		}
+		sb.WriteString("\n  Press " + cyan.Render("Enter") + " or " + dim.Render("Esc") + " to return\n")
 	}
 
 	return sb.String()

@@ -30,8 +30,8 @@ contract GeoyuanCard {
         string description;
         string color;       // hex e.g. "#c77dff"
         uint64 h3Index;    // H3 cell
-        uint16 latE4;      // 纬度×10000 (30.2741°N → 302741)
-        int16  lonE4;      // 经度×10000 (120.1551°E → 1201551)
+        int32 latE4;      // 纬度×10000 (30.2741°N → 302741)
+        int32  lonE4;      // 经度×10000 (120.1551°E → 1201551)
         uint32 res;        // H3 resolution
         uint40 timestamp;  // mint 时间戳 (秒)
     }
@@ -55,8 +55,8 @@ contract GeoyuanCard {
         string calldata title,
         string calldata description,
         string calldata color,
-        uint16 latE4,
-        int16  lonE4,
+        int32 latE4,
+        int32  lonE4,
         uint32 res
     ) external returns (uint256 tokenId) {
         // 唯一性检查：同一 cell 不能 mint 两次
@@ -85,7 +85,7 @@ contract GeoyuanCard {
             latE4:       latE4,
             lonE4:       lonE4,
             res:         res,
-            timestamp:   uint40(block.timestamp),
+            timestamp:   uint40(block.timestamp)
         });
         tokenURI[tokenId] = _buildTokenURI(tokenId);
 
@@ -145,15 +145,15 @@ contract GeoyuanCard {
         CardMeta storage m = metadata[tokenId];
         // 简化：直接存一个 JSON blob （链上便宜，省掉 IPFS/Arweave 依赖）
         return string(abi.encodePacked(
-            '{"name":"Geoyuan #', _itoa(tokenId),
+            '{"name":"Geoyuan #', _itoa(int256(tokenId)),
             '","title":"', m.title,
             '","description":"', m.description,
             '","color":"', m.color,
-            '","h3Index":"', _itoa(m.h3Index),
+            '","h3Index":"', _itoa(int256(uint256(m.h3Index))),
             '","lat":', _itoa(int256(m.latE4)),
             ',"lon":', _itoa(int256(m.lonE4)),
-            '","res":',  _itoa(int256(m.res)),
-            '","timestamp":', _itoa(int256(m.timestamp)),
+            ',"res":',  _itoa(int256(uint256(m.res))),
+            '","timestamp":', _itoa(int256(uint256(m.timestamp))),
             '}'
         ));
     }
@@ -166,7 +166,7 @@ contract GeoyuanCard {
         uint256 i;
         uint256 j;
         bytes memory buf = new bytes(78);
-        while (n > 0) { buf[i++] = byte('0' + uint8(n % 10)); n /= 10; }
+        while (n > 0) { buf[i++] = bytes1(uint8(uint256(n % 10) + 48)); n /= 10; }
         if (neg) buf[i++] = '-';
         bytes memory out = new bytes(i);
         for (j = 0; j < i; j++) out[j] = buf[i - j - 1];

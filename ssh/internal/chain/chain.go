@@ -1,9 +1,10 @@
 // Package chain — Polygon RPC 交互（ethclient）
 //
 // 用法：
-//   client := chain.New(chain.Env())
-//   gasPrice, _ := client.GasPrice(ctx)
-//   balance, _ := client.BalanceAt(ctx, addr, nil)
+//
+//	client := chain.New(chain.Env())
+//	gasPrice, _ := client.GasPrice(ctx)
+//	balance, _ := client.BalanceAt(ctx, addr, nil)
 package chain
 
 import (
@@ -68,6 +69,9 @@ func New(cfg Config) (*Client, error) {
 		cancel: cancel,
 	}, nil
 }
+
+// Eth — 暴露底层 ethclient，给 abigen 绑定用（实现 bind.ContractBackend）
+func (c *Client) Eth() *ethclient.Client { return c.eth }
 
 // Close — 关连接
 func (c *Client) Close() {

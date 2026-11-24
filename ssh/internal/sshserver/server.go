@@ -24,6 +24,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/crypto/ssh"
 
+	"geoyuan.cn/ssh/internal/card"
 	"geoyuan.cn/ssh/internal/chat"
 	"geoyuan.cn/ssh/internal/geo"
 	"geoyuan.cn/ssh/internal/questiongen"
@@ -39,17 +40,18 @@ const (
 	maxSessionDuration = 60 * time.Minute // 单次会话最长时长（聊天室允许更久）
 )
 
-// Server 持有存储、AI 题目生成器、聊天中心与监听地址
+// Server 持有存储、AI 题目生成器、聊天中心、GeoyuanCard 服务与监听地址
 type Server struct {
-	store     *store.Store
-	generator *questiongen.Generator
-	chatHub   *chat.Hub
-	addr      string
+	store       *store.Store
+	generator   *questiongen.Generator
+	chatHub     *chat.Hub
+	cardService *card.Service
+	addr        string
 }
 
 // New 构造 Server
-func New(s *store.Store, gen *questiongen.Generator, chatHub *chat.Hub, addr string) *Server {
-	return &Server{store: s, generator: gen, chatHub: chatHub, addr: addr}
+func New(s *store.Store, gen *questiongen.Generator, chatHub *chat.Hub, cardService *card.Service, addr string) *Server {
+	return &Server{store: s, generator: gen, chatHub: chatHub, cardService: cardService, addr: addr}
 }
 
 // ListenAndServe 加载/生成 host key 并开始监听，阻塞直到出错。
@@ -198,7 +200,7 @@ func (s *Server) handleSession(ch ssh.Channel, requests <-chan *ssh.Request, fp 
 		return
 	}
 
-	model := tui.New(s.store, s.generator, fp, user, s.chatHub, ip, host, geoLoc)
+	model := tui.New(s.store, s.generator, fp, user, s.chatHub, s.cardService, ip, host, geoLoc)
 	prog := tea.NewProgram(
 		model,
 		tea.WithInput(ch),
