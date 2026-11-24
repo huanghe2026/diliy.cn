@@ -311,57 +311,61 @@ func (m Model) userInfoString() string {
 }
 
 // ═══════════════════════════════════════════════
-//  📝 注册页 — 霓虹 Cyberpunk 风
+//  📝 注册页 — 精简版，保证 24 行终端也能完整显示
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
 
-	b.WriteString(m.headerBar("· Join Geoyuan ·"))
-
-	// 🛰️ 欢迎卡 (先用 — 保证 Bubble Tea 视口优先显示)
-	b.WriteString(RenderWelcomeCard())
+	// ① 彩虹 Geoyuan logo — 顶置！第一眼就看到
+	b.WriteString(RenderRainbowLogo())
+	b.WriteString(RenderNeonTagline())
 	b.WriteString("\n")
 
-	// 📍 连接信息（地理位置优先，降级 IP）
+	// ② headerBar（紧凑版）
+	b.WriteString(m.headerBarCompact())
+
+	// ③ 欢迎语（一行版）
+	welcomeLine := "  🛰️  Welcome, Buddy — you've found the gateway to " + RainbowText("Geoyuan")
+	b.WriteString(welcomeLine + "\n\n")
+
+	// ④ 连接信息
 	if m.remoteIP != "" {
-		var ipInfo string
+		loc := m.remoteIP
 		switch {
 		case m.remoteIP == "127.0.0.1" || m.remoteIP == "::1":
-			ipInfo = "  📍 Connected from localhost"
+			loc = "localhost"
 		case m.geoLoc != "":
-			ipInfo = fmt.Sprintf("  📍 Connected from %s", m.geoLoc)
-			ipInfo += fmt.Sprintf("  ·  %s", m.remoteIP)
-		default:
-			ipInfo = fmt.Sprintf("  📍 Connected from %s", m.remoteIP)
+			loc = m.geoLoc + " · " + m.remoteIP
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render(ipInfo))
+		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render(fmt.Sprintf("  📍 %s", loc)))
 		b.WriteString("\n\n")
 	}
 
-	// 📝 注册输入卡
+	// ⑤ 注册输入（精简卡）
 	ti := m.nameInput
 	ti.Prompt = "  " + lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true).Render(">") + " "
-	nameInputLine := ti.View()
 
-	registerCard := fmt.Sprintf(
-		"  %s\n\n  %s\n\n  %s",
-		lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("⚡  New Buddy Registration"),
-		lipgloss.NewStyle().Foreground(cMuted).Render("  Enter your unique handle (2-20 chars, a-z/0-9/_)"),
-		nameInputLine,
-	)
-	b.WriteString(styleCardAccent.Render(registerCard))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("  ⚡  Register"))
+	b.WriteString("\n\n")
+	b.WriteString("  " + ti.View())
 
 	if m.inputErr != "" {
 		b.WriteString("\n  " + styleErr.Render("✗  "+m.inputErr))
 	}
 
-	b.WriteString("\n  " + lipgloss.NewStyle().Foreground(cMuted).Render("↵ Enter to confirm  ·  Ctrl+C to exit  ·  Try :redeem <token>"))
+	b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(cMuted).Render("↵ confirm  ·  Ctrl+C exit  ·  :redeem <token>"))
 
-	// 🌈 彩虹渐变 Geoyuan Logo — 放底部避免 Bubble Tea 视口截断
-	b.WriteString("\n\n")
-	b.WriteString(RenderRainbowLogo())
-	b.WriteString(RenderNeonTagline())
+	return b.String()
+}
 
+// headerBarCompact — 精简版 header，去掉右侧用户信息 + 80 宽分隔线
+func (m Model) headerBarCompact() string {
+	var b strings.Builder
+	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
+	b.WriteString(styleHeader.Render("  ·  Join Geoyuan  ·"))
+	b.WriteString("\n")
+	// 短分隔线（只画 40 字符，避免宽终端看起来空）
+	b.WriteString(lipgloss.NewStyle().Foreground(colorBrand).Render(strings.Repeat("━", 40)) + "\n")
 	return b.String()
 }
 
