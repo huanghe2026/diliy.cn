@@ -39,6 +39,9 @@ const (
 	PhaseWelcome
 	PhaseRetry
 	PhaseChat
+	PhaseMenu      // 主菜单（Welcome 后进入）
+	PhaseMintCard  // Mint GeoyuanCard 视图
+	PhaseMyCards   // 我的卡片列表
 )
 
 // ═══════════════════════════════════════════════
@@ -92,6 +95,10 @@ type Model struct {
 	sub       *chat.Subscription
 	chatLog   []chat.Message
 	chatInput textinput.Model
+
+	// 🎴 Mint — GeoyuanCard 铸造视图
+	mintView PhaseMint
+	menuCursor int // 主菜单当前选中项
 
 	// 状态
 	Done   bool
@@ -183,8 +190,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case welcomeDoneMsg:
 		if m.phase == PhaseWelcome {
-			m.phase = PhaseChat
-			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+			m.phase = PhaseMenu
+			m.menuCursor = 0
+			return m, nil
 		}
 	case chatMsgWrapper:
 		if m.phase == PhaseChat {
@@ -221,11 +229,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case PhaseWelcome:
 		if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
-			m.enterChat()
-			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+			m.phase = PhaseMenu
+			m.menuCursor = 0
+			return m, nil
 		}
 	case PhaseRetry:
 		return m.updateRetry(msg)
+	case PhaseMenu:
+		return m.updateMenu(msg)
+	case PhaseMintCard:
+		return m.updateMint(msg)
+	case PhaseMyCards:
+		return m.updateMyCards(msg)
 	case PhaseChat:
 		return m.updateChat(msg)
 	}
@@ -245,6 +260,12 @@ func (m Model) View() string {
 		return m.viewWelcome()
 	case PhaseRetry:
 		return m.viewRetry()
+	case PhaseMenu:
+		return m.viewMenu()
+	case PhaseMintCard:
+		return m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
+	case PhaseMyCards:
+		return m.viewMyCards()
 	case PhaseChat:
 		return m.viewChat()
 	}
@@ -1116,4 +1137,134 @@ func letter(i int) string {
 		return "-"
 	}
 	return string(rune('A' + i))
+}
+
+// ═══════════════════════════════════════════════
+//  📋 Main Menu — 主菜单（Welcome 之后进入）
+// ═══════════════════════════════════════════════
+
+var menuItems = []struct {
+	icon  string
+	label string
+	desc  string
+}{
+	{"🎴", "Mint a Geoyuan Card", "Create your permanent geodigital asset on Polygon"},
+	{"🃏", "My Cards", "View your minted cards and H3 cells"},
+	{"💬", "Crew Chat", "Talk with other Geoyuan builders"},
+	{"🌐", "Open geoyuan.com", "Learn more about the Network State"},
+	{"🚪", "Exit", "Disconnect from SSH"},
+}
+
+func (m Model) viewMenu() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar(" · Main Menu"))
+	b.WriteString("\n")
+
+	// Geoyuan logo (neon rainbow)
+	logo := RenderRainbowLogo()
+	b.WriteString(logo + "\n\n")
+
+	// 主菜单选项
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true).
+		Render("  ◆ Welcome back, Buddy — choose your action:") + "\n\n")
+
+	for i, item := range menuItems {
+		prefix := "  "
+		style := lipgloss.NewStyle()
+		if i == m.menuCursor {
+			prefix = "▸ "
+			style = style.Bold(true).Foreground(lipgloss.Color("45"))
+		} else {
+			style = style.Foreground(lipgloss.Color("245"))
+		}
+		b.WriteString(prefix + style.Render(fmt.Sprintf("%s %s", item.icon, item.label)) + "\n")
+		if i == m.menuCursor {
+			b.WriteString("    " + lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render(item.desc) + "\n")
+		}
+	}
+
+	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("245")).
+		Render("  ↑↓/jk navigate · Enter select · q quit") + "\n")
+	return b.String()
+}
+
+func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.menuCursor > 0 {
+			m.menuCursor--
+		}
+	case "down", "j":
+		if m.menuCursor < len(menuItems)-1 {
+			m.menuCursor++
+		}
+	case "enter", " ":
+		switch m.menuCursor {
+		case 0: // Mint
+			m.mintView = NewPhaseMint(m.remoteIP, m.geoLoc)
+			m.phase = PhaseMintCard
+			return m, nil
+		case 1: // My Cards
+			m.phase = PhaseMyCards
+			return m, nil
+		case 2: // Crew Chat
+			m.enterChat()
+			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+		case 3: // geoyuan.com — 显示 URL 后退出
+			fmt.Print("\n  🌐 Visit https://www.geoyuan.com/\n\n")
+			m.Done = true
+			return m, tea.Quit
+		case 4: // Exit
+			m.cleanupChat()
+			m.Done = true
+			return m, tea.Quit
+		}
+	case "q", "esc":
+		m.cleanupChat()
+		m.Done = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// ═══════════════════════════════════════════════
+//  🎴 Mint 视图处理器
+// ═══════════════════════════════════════════════
+func (m Model) updateMint(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.mintView, cmd = m.mintView.Update(msg)
+	if m.mintView.Done() {
+		m.phase = PhaseMenu
+		m.menuCursor = 0
+	}
+	return m, cmd
+}
+
+// ═══════════════════════════════════════════════
+//  🃏 My Cards 视图
+// ═══════════════════════════════════════════════
+func (m Model) viewMyCards() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar(" · My Cards"))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true).
+		Render("  🃏 Your Geoyuan Cards") + "\n\n")
+	b.WriteString("  📦 Cards will appear here after minting on Polygon Amoy.\n")
+	b.WriteString("  💡 Mint your first card from the Main Menu.\n")
+	b.WriteString("\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("245")).
+		Render("Press Esc to return to menu · q to quit") + "\n")
+	return b.String()
+}
+
+func (m Model) updateMyCards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.phase = PhaseMenu
+		return m, nil
+	case "enter", " ":
+		m.mintView = NewPhaseMint(m.remoteIP, m.geoLoc)
+		m.phase = PhaseMintCard
+		return m, nil
+	}
+	return m, nil
 }
