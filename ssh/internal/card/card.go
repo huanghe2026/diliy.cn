@@ -235,12 +235,12 @@ func (s *Service) mintOnChain(h3Index uint64, p MintParams, lat, lon float64, re
 
 // ─── MyCards ─────────────────────────────────────────
 
-// MyCards — 查某地址所有 GeoyuanCard（tokenId 列表 + tokenURI 解析）
+// MyCards — 查某地址所有 GeoyuanCard，读 metadata 拿 title/desc/color/latE4/lonE4/res/timestamp
 func (s *Service) MyCards(addrHex string) ([]Card, error) {
 	if s.gyc == nil {
 		return []Card{}, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	addr := common.HexToAddress(addrHex)
@@ -250,11 +250,23 @@ func (s *Service) MyCards(addrHex string) ([]Card, error) {
 	}
 	out := make([]Card, 0, len(tokenIDs))
 	for _, tid := range tokenIDs {
-		uri, _ := s.gyc.TokenURI(&bind.CallOpts{Context: ctx}, tid)
+		md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
+		if err != nil {
+			// metadata 查不到时至少保留有 tokenId 的条目
+			out = append(out, Card{TokenID: tid.String(), Owner: addrHex})
+			continue
+		}
 		out = append(out, Card{
-			TokenID: tid.String(),
-			Owner:   addrHex,
-			TxHash:  uri, // 临时：tokenURI 本身就是 JSON blob
+			TokenID:   tid.String(),
+			H3Index:   md.H3Index,
+			Title:     md.Title,
+			Desc:      md.Description,
+			Color:     md.Color,
+			Lat:       float64(md.LatE4) / 10000.0,
+			Lon:       float64(md.LonE4) / 10000.0,
+			Res:       int(md.Res),
+			Timestamp: md.Timestamp.Int64(),
+			Owner:     addrHex,
 		})
 	}
 	return out, nil
@@ -262,12 +274,50 @@ func (s *Service) MyCards(addrHex string) ([]Card, error) {
 
 // ─── 邻居匹配 ─────────────────────────────────────────
 
-// NeighborMatch — 查某 H3 cell 附近 k-ring 内的别人的卡
-func (s *Service) NeighborMatch(h3Index uint64, k int) ([]Card, error) {
+// NeighborMatch — H3 k-ring 里真正被 mint 的卡（owner != self）
+// 用合约 neighborMatch(self, cells) 拿已 mint 的 tokenId，再读 metadata
+func (s *Service) NeighborMatch(selfAddrHex string, h3Index uint64, k int) ([]Card, error) {
 	ring := h3.KRing(h3Index, k)
-	out := make([]Card, 0)
+	cells := make([]uint64, 0, len(ring))
 	for _, c := range ring {
-		out = append(out, Card{H3Index: c.Index, Lat: c.Lat, Lon: c.Lon, Res: c.Res})
+		cells = append(cells, c.Index)
+	}
+
+	if s.gyc == nil {
+		// 无合约时降级：返回全部 ring 作为候选
+		out := make([]Card, 0, len(ring))
+		for _, c := range ring {
+			out = append(out, Card{H3Index: c.Index, Lat: c.Lat, Lon: c.Lon, Res: c.Res})
+		}
+		return out, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	self := common.HexToAddress(selfAddrHex)
+	tokenIDs, err := s.gyc.NeighborMatch(&bind.CallOpts{Context: ctx}, self, cells)
+	if err != nil {
+		return nil, fmt.Errorf("neighborMatch: %w", err)
+	}
+	out := make([]Card, 0, len(tokenIDs))
+	for _, tid := range tokenIDs {
+		md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
+		if err != nil {
+			out = append(out, Card{TokenID: tid.String()})
+			continue
+		}
+		out = append(out, Card{
+			TokenID:   tid.String(),
+			H3Index:   md.H3Index,
+			Title:     md.Title,
+			Desc:      md.Description,
+			Color:     md.Color,
+			Lat:       float64(md.LatE4) / 10000.0,
+			Lon:       float64(md.LonE4) / 10000.0,
+			Res:       int(md.Res),
+			Timestamp: md.Timestamp.Int64(),
+		})
 	}
 	return out, nil
 }

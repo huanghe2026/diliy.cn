@@ -104,6 +104,17 @@ type Model struct {
 	menuCursor  int           // 主菜单当前选中项
 	cardService *card.Service // Polygon GeoyuanCard 链上服务（nil 时只做 H3 预览）
 
+	// 🃏 MyCards / 邻居匹配
+	myCardsCache    []card.Card
+	myCardsErr      error
+	myCardsLoading  bool
+	neighborCache   []card.Card
+	neighborErr     error
+	neighborLoading bool
+	neighborK       int
+	neighborH3      uint64
+	showNeighbors   bool
+
 	// 状态
 	Done   bool
 	UserID int64
@@ -168,6 +179,14 @@ type (
 		result *card.MintResult
 		err    error
 	}
+	myCardsLoadedMsg struct {
+		cards []card.Card
+		err   error
+	}
+	neighborLoadedMsg struct {
+		cards []card.Card
+		err   error
+	}
 )
 
 func receiveMsgs(sub *chat.Subscription) tea.Cmd {
@@ -212,6 +231,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case mintResultMsg:
 		m.mintView = m.mintView.WithResult(msg.result, msg.err)
+		return m, nil
+	case myCardsLoadedMsg:
+		m.myCardsCache = msg.cards
+		m.myCardsErr = msg.err
+		m.myCardsLoading = false
+		return m, nil
+	case neighborLoadedMsg:
+		m.neighborCache = msg.cards
+		m.neighborErr = msg.err
+		m.neighborLoading = false
 		return m, nil
 	}
 	return m, nil
@@ -1239,8 +1268,11 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.phase = PhaseMintCard
 			return m, nil
 		case 1: // My Cards
+			m.myCardsLoading = true
+			m.myCardsErr = nil
+			m.showNeighbors = false
 			m.phase = PhaseMyCards
-			return m, nil
+			return m, m.loadMyCardsCmd()
 		case 2: // Crew Chat
 			m.enterChat()
 			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
@@ -1278,31 +1310,167 @@ func (m Model) updateMint(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // ═══════════════════════════════════════════════
 //
-//	🃏 My Cards 视图
+//	🃏 My Cards 视图（链上 myCards + metadata）
 //
 // ═══════════════════════════════════════════════
+func (m Model) loadMyCardsCmd() tea.Cmd {
+	svc := m.cardService
+	addr := "0x0000000000000000000000000000000000000000"
+	if svc != nil {
+		addr = svc.FromAddr()
+	}
+	return func() tea.Msg {
+		if svc == nil {
+			return myCardsLoadedMsg{err: fmt.Errorf("GeoyuanCard service not available (chain not ready)")}
+		}
+		cards, err := svc.MyCards(addr)
+		if err != nil {
+			return myCardsLoadedMsg{err: err}
+		}
+		return myCardsLoadedMsg{cards: cards}
+	}
+}
+
+func (m Model) loadNeighborCmd(h3Index uint64, k int) tea.Cmd {
+	svc := m.cardService
+	addr := "0x0000000000000000000000000000000000000000"
+	if svc != nil {
+		addr = svc.FromAddr()
+	}
+	return func() tea.Msg {
+		if svc == nil {
+			return neighborLoadedMsg{err: fmt.Errorf("GeoyuanCard service not available")}
+		}
+		cards, err := svc.NeighborMatch(addr, h3Index, k)
+		if err != nil {
+			return neighborLoadedMsg{err: err}
+		}
+		return neighborLoadedMsg{cards: cards}
+	}
+}
+
 func (m Model) viewMyCards() string {
 	var b strings.Builder
 	b.WriteString(m.headerBar(" · My Cards"))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true).
-		Render("  🃏 Your Geoyuan Cards") + "\n\n")
-	b.WriteString("  📦 Cards will appear here after minting on Polygon Amoy.\n")
-	b.WriteString("  💡 Mint your first card from the Main Menu.\n")
-	b.WriteString("\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("245")).
-		Render("Press Esc to return to menu · q to quit") + "\n")
+	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
+
+	if m.myCardsLoading {
+		b.WriteString(cyan.Render("  Loading your cards from Polygon Amoy...") + "\n")
+		b.WriteString(dim.Render("  (this may take 10-30 seconds)\n"))
+		return b.String()
+	}
+	if m.myCardsErr != nil {
+		b.WriteString(red.Render(fmt.Sprintf("  ✗ Failed to load cards: %v", m.myCardsErr)) + "\n\n")
+		b.WriteString(dim.Render("  Press R to retry · Esc to return\n"))
+		return b.String()
+	}
+
+	if !m.showNeighbors {
+		// 我的卡片列表
+		b.WriteString(neon.Render("  🃏 Your Geoyuan Cards") + "\n")
+		if m.cardService != nil && m.cardService.Ready() {
+			b.WriteString(green.Render("  ✓ Connected to Polygon Amoy") + "\n\n")
+		} else {
+			b.WriteString(dim.Render("  (chain not ready — showing cache only)\n\n"))
+		}
+
+		if len(m.myCardsCache) == 0 {
+			b.WriteString(dim.Render("  📭 You don't own any cards yet.\n"))
+			b.WriteString("  Mint your first card from the Main Menu → 🎴 Mint.\n\n")
+		} else {
+			for _, c := range m.myCardsCache {
+				b.WriteString(fmt.Sprintf("  🎴 Token #%s\n", c.TokenID))
+				if c.Title != "" {
+					b.WriteString(fmt.Sprintf("     Title:   %s\n", c.Title))
+				}
+				if c.Desc != "" {
+					b.WriteString(fmt.Sprintf("     Desc:    %s\n", truncateLine(c.Desc, 60)))
+				}
+				if c.Color != "" {
+					b.WriteString(fmt.Sprintf("     Color:   %s ", c.Color))
+					b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(strings.TrimPrefix(c.Color, "#"))).Render("■"))
+					b.WriteString("\n")
+				}
+				if c.H3Index != 0 {
+					b.WriteString(fmt.Sprintf("     H3:      0x%x (res=%d)\n", c.H3Index, c.Res))
+					b.WriteString(fmt.Sprintf("     Lat/Lon: %.4f, %.4f\n", c.Lat, c.Lon))
+				}
+				b.WriteString("\n")
+			}
+		}
+
+		// 邻居匹配入口（基于第一张卡的 H3 cell）
+		if len(m.myCardsCache) > 0 && m.myCardsCache[0].H3Index != 0 {
+			first := m.myCardsCache[0]
+			b.WriteString(dim.Render("  ─────────────────────────────────────\n"))
+			b.WriteString("  Press " + cyan.Render("M") + " to find neighbor matches around your first card\n")
+			b.WriteString(fmt.Sprintf("    Center cell: 0x%x (k=%d)\n", first.H3Index, m.neighborK))
+		}
+		b.WriteString(dim.Render("\n  R reload · Esc/← Back · q quit\n"))
+	} else {
+		// 邻居匹配结果
+		b.WriteString(neon.Render(fmt.Sprintf("  🧭 Neighbor Match — k=%d around 0x%x", m.neighborK, m.neighborH3)) + "\n\n")
+		if m.neighborLoading {
+			b.WriteString(cyan.Render("  Loading neighbor matches...") + "\n")
+			return b.String()
+		}
+		if m.neighborErr != nil {
+			b.WriteString(red.Render(fmt.Sprintf("  ✗ Neighbor query failed: %v", m.neighborErr)) + "\n\n")
+		} else if len(m.neighborCache) == 0 {
+			b.WriteString(dim.Render("  🗺️  No matching cards found in this area yet.\n"))
+			b.WriteString("  More travelers minting nearby cards over time → matches will appear.\n\n")
+		} else {
+			b.WriteString(green.Render(fmt.Sprintf("  Found %d neighbor card(s):\n\n", len(m.neighborCache))))
+			for _, c := range m.neighborCache {
+				title := c.Title
+				if title == "" {
+					title = "(no title)"
+				}
+				b.WriteString(fmt.Sprintf("  🧩 #%s  %s\n", c.TokenID, title))
+				if c.H3Index != 0 {
+					b.WriteString(fmt.Sprintf("     cell: 0x%x  lat=%.4f lon=%.4f  res=%d\n", c.H3Index, c.Lat, c.Lon, c.Res))
+				}
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString(dim.Render("  Esc/← Back to My Cards · q quit\n"))
+	}
 	return b.String()
+}
+
+func truncateLine(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func (m Model) updateMyCards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
 		m.phase = PhaseMenu
+		m.showNeighbors = false
 		return m, nil
-	case "enter", " ":
-		m.mintView = NewPhaseMint(m.cardService, m.remoteIP, m.geoLoc)
-		m.phase = PhaseMintCard
-		return m, nil
+	case "r", "R":
+		if !m.myCardsLoading {
+			m.myCardsLoading = true
+			m.myCardsErr = nil
+			return m, m.loadMyCardsCmd()
+		}
+	case "m", "M":
+		if !m.showNeighbors && len(m.myCardsCache) > 0 && m.myCardsCache[0].H3Index != 0 && !m.neighborLoading {
+			m.neighborK = 2
+			m.neighborH3 = m.myCardsCache[0].H3Index
+			m.neighborLoading = true
+			m.neighborErr = nil
+			m.showNeighbors = true
+			return m, m.loadNeighborCmd(m.neighborH3, m.neighborK)
+		}
 	}
 	return m, nil
 }
