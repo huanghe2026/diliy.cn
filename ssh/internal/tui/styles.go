@@ -185,17 +185,17 @@ func RenderGlowBox(content string, width int, colors []lipgloss.Color) string {
 	return b.String()
 }
 
-// RenderWelcomeCard 注册页主欢迎卡 — 带彩虹 Geoyuan
+// RenderWelcomeCard 注册页主欢迎卡 — 带彩虹 Geoyuan + 彩虹渐变边框
 func RenderWelcomeCard() string {
 	var b strings.Builder
 
-	// 彩虹渐变边框顶
-	b.WriteString(RainbowBorder(62, '╭'))
+	// 彩虹渐变顶边框：╭ + 58×─ + ╮
+	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╭"))
 	for i := 0; i < 58; i++ {
-		c := rainbowColors[i%len(rainbowColors)]
+		c := rainbowColors[(i+1)%len(rainbowColors)]
 		b.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
 	}
-	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╮"))
+	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[len(rainbowColors)-1]).Render("╮"))
 	b.WriteString("\n")
 
 	// 边框行
@@ -203,7 +203,7 @@ func RenderWelcomeCard() string {
 	b.WriteString(strings.Repeat(" ", 60))
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
 
-	// 欢迎标题（彩虹 Geoyuan）
+	// 欢迎标题
 	welcomeTitle := "  🛰️  Welcome, Buddy                                    "
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
 	b.WriteString(welcomeTitle)
@@ -242,10 +242,10 @@ func RenderWelcomeCard() string {
 	b.WriteString(line4)
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
 
-	// 底边框
-	b.WriteString(RainbowBorder(62, '╰'))
+	// 彩虹渐变底边框：╰ + 58×─ + ╯
+	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╰"))
 	for i := 0; i < 58; i++ {
-		c := rainbowColors[i%len(rainbowColors)]
+		c := rainbowColors[(i+1)%len(rainbowColors)]
 		b.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
 	}
 	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[len(rainbowColors)-1]).Render("╯"))
