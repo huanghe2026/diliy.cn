@@ -1,5 +1,5 @@
 // Package geo 轻量 IP → 地理位置 resolver
-// 用 ipapi.co 免费 API，带内存缓存 + 2s 超时
+// 多源 fallback + 内存缓存 + 2s 超时
 package geo
 
 import (
@@ -16,9 +16,6 @@ type Location struct {
 	Region      string `json:"region"`
 	City        string `json:"city"`
 	Org         string `json:"org"` // ISP / 组织
-
-	// Raw API response (ipapi.co)
-	raw map[string]interface{}
 }
 
 // Display 生成人类可读的位置字符串
@@ -39,21 +36,6 @@ func (l *Location) Display() string {
 	return ""
 }
 
-// Full 完整显示（带 ISP）
-func (l *Location) Full() string {
-	if l == nil {
-		return ""
-	}
-	loc := l.Display()
-	if l.Org != "" && loc != "" {
-		return loc + " · " + l.Org
-	}
-	if l.Org != "" {
-		return l.Org
-	}
-	return loc
-}
-
 // ═══════════════════════════════════════════════
 //  🔌 Resolver — 带缓存的 IP 地理位置查询
 // ═══════════════════════════════════════════════
@@ -64,7 +46,7 @@ type cacheEntry struct {
 	exp time.Time
 }
 
-const cacheTTL = 24 * time.Hour // 同一 IP 缓存 24h
+const cacheTTL = 24 * time.Hour
 
 var (
 	cacheMu sync.RWMutex
@@ -72,8 +54,8 @@ var (
 	httpCli = &http.Client{Timeout: 2 * time.Second}
 )
 
-// Resolve 查一个 IP 的地理位置（带缓存）
-// 失败返回 nil, "" — 调用方降级显示 IP
+// Resolve 查一个 IP 的地理位置（带缓存 + 多源 fallback）
+// 失败返回 nil — 调用方降级显示 IP
 func Resolve(ip string) *Location {
 	if ip == "" || ip == "127.0.0.1" || ip == "::1" {
 		return nil
@@ -87,10 +69,13 @@ func Resolve(ip string) *Location {
 	}
 	cacheMu.RUnlock()
 
-	// 查 API
-	loc := queryIPAPI(ip)
+	// 多源 fallback：ipinfo.io → ip-api.com
+	loc := queryIPinfo(ip)
+	if loc == nil {
+		loc = queryIPAPI(ip)
+	}
 
-	// 写缓存（哪怕 nil — 避免同一 IP 反复打 API）
+	// 写缓存
 	cacheMu.Lock()
 	cache[ip] = cacheEntry{loc: loc, exp: time.Now().Add(cacheTTL)}
 	cacheMu.Unlock()
@@ -98,15 +83,16 @@ func Resolve(ip string) *Location {
 	return loc
 }
 
-// queryIPAPI 实际查 ipapi.co
-func queryIPAPI(ip string) *Location {
-	url := "https://ipapi.co/" + ip + "/json/"
-	resp, err := httpCli.Get(url)
+// ═══════════════════════════════════════════════
+//  📡 源 1: ipinfo.io (免费 50k req/月)
+//  格式: { city, region, country, org, ... }
+// ═══════════════════════════════════════════════
+func queryIPinfo(ip string) *Location {
+	resp, err := httpCli.Get("https://ipinfo.io/" + ip + "/json")
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != 200 {
 		return nil
 	}
@@ -116,23 +102,51 @@ func queryIPAPI(ip string) *Location {
 		return nil
 	}
 
-	// ipapi.co 对私有 IP 返回 "Private IP Address"
-	if v, _ := raw["error"].(bool); v {
+	// 这个源对私有 IP 也会返回有效数据，不需要 error 检查
+	return &Location{
+		City:        strField(raw, "city"),
+		Region:      strField(raw, "region"),
+		CountryCode: strField(raw, "country"),
+		CountryName: countryName(raw["country"]),
+		Org:         strField(raw, "org"),
+	}
+}
+
+// ═══════════════════════════════════════════════
+//  📡 源 2: ip-api.com (免费, 45 req/min, 无 key)
+//  格式: { status, country, countryCode, regionName, city, isp, org, ... }
+// ═══════════════════════════════════════════════
+func queryIPAPI(ip string) *Location {
+	resp, err := httpCli.Get("http://ip-api.com/json/" + ip)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
 		return nil
 	}
 
-	loc := &Location{
-		CountryCode: strField(raw, "country_code"),
-		CountryName: strField(raw, "country_name"),
-		Region:      strField(raw, "region"),
-		City:        strField(raw, "city"),
-		Org:         strField(raw, "org"),
-		raw:         raw,
+	var raw map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil
 	}
-	return loc
+	if strField(raw, "status") != "success" {
+		return nil
+	}
+
+	return &Location{
+		City:        strField(raw, "city"),
+		Region:      strField(raw, "regionName"),
+		CountryCode: strField(raw, "countryCode"),
+		CountryName: strField(raw, "country"),
+		Org:         firstNonEmpty(strField(raw, "org"), strField(raw, "isp")),
+	}
 }
 
-// strField 安全取 string 字段
+// ═══════════════════════════════════════════════
+//  🔧 辅助函数
+// ═══════════════════════════════════════════════
+
 func strField(m map[string]interface{}, key string) string {
 	v, ok := m[key].(string)
 	if !ok {
@@ -141,11 +155,36 @@ func strField(m map[string]interface{}, key string) string {
 	return v
 }
 
-// ═══════════════════════════════════════════════
-//  🔄 备用 API — 多个 source 增加鲁棒性
-// ═══════════════════════════════════════════════
-// ipapi.co 限免费 1000 req/day，够用
-// 如果挂了可以切换到 ip.sb/geoip/ip
+func firstNonEmpty(s ...string) string {
+	for _, v := range s {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// countryName 把 ISO code 转全名（简单 map，够用）
+var countryNames = map[string]string{
+	"CN": "China", "US": "United States", "JP": "Japan", "KR": "South Korea",
+	"SG": "Singapore", "HK": "Hong Kong", "TW": "Taiwan", "GB": "United Kingdom",
+	"DE": "Germany", "FR": "France", "NL": "Netherlands", "RU": "Russia",
+	"IN": "India", "BR": "Brazil", "AU": "Australia", "CA": "Canada",
+}
+
+func countryName(code interface{}) string {
+	if code == nil {
+		return ""
+	}
+	c, ok := code.(string)
+	if !ok {
+		return ""
+	}
+	if name, ok := countryNames[c]; ok {
+		return name
+	}
+	return c // 没映射到就返回 code 本身
+}
 
 // ClearCache 清缓存（主要用于测试）
 func ClearCache() {
