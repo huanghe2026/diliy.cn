@@ -313,7 +313,7 @@ func (m Model) userInfoString() string {
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar("· Join GEORUAN ·"))
+	b.WriteString(m.headerBar("· Join Geoyuan ·"))
 
 	// 🌈 彩虹渐变 Geoyuan Logo
 	b.WriteString(RenderRainbowLogo())
@@ -342,7 +342,7 @@ func (m Model) viewRegister() string {
 
 	registerCard := fmt.Sprintf(
 		"  %s\n\n  %s\n\n  %s",
-		lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("⚡  New Traveler Registration"),
+		lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("⚡  New Buddy Registration"),
 		lipgloss.NewStyle().Foreground(cMuted).Render("  Enter your unique handle (2-20 chars, a-z/0-9/_)"),
 		nameInputLine,
 	)

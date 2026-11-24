@@ -143,9 +143,9 @@ func RenderWelcomeCard() string {
 	w := `
   ╭──────────────────────────────────────────────────────────╮
   │                                                          │
-  │   🛰️  Welcome, Traveler                                 │
+  │   🛰️  Welcome, Buddy                                    │
   │                                                          │
-  │   You've found the gateway to GEORUAN —                  │
+  │   You've found the gateway to Geoyuan —                  │
   │   an exclusive team of AI engineers and builders.        │
   │                                                          │
   │   Pass the AI recruitment test to earn your place.       │
@@ -168,7 +168,7 @@ func RenderCongratsPass(score, total int) string {
   ║         You've been promoted to                            ║
   ║                                                           ║
   ║          ╔══════════════════╗                             ║
-  ║          ║  GEORUAN MEMBER  ║                             ║
+  ║          ║  Geoyuan MEMBER  ║                             ║
   ║          ╚══════════════════╝                             ║
   ║                                                           ║
   ║     Score: %d / %d   ✓   ✓   ✓                             ║
