@@ -196,73 +196,29 @@ func RenderGlowBox(content string, width int, colors []lipgloss.Color) string {
 	return b.String()
 }
 
-// RenderWelcomeCard 注册页主欢迎卡 — 带彩虹 Geoyuan + 彩虹渐变边框
+// RenderWelcomeCard 注册页主欢迎卡 — 用 lipgloss Border 保证渲染正确
 func RenderWelcomeCard() string {
-	var b strings.Builder
+	// Geoyuan 彩虹高亮的描述
+	line1 := "You've found the gateway to " + RainbowText("Geoyuan") + " —"
 
-	// 彩虹渐变顶边框：╭ + 58×─ + ╮
-	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╭"))
-	for i := 0; i < 58; i++ {
-		c := rainbowColors[(i+1)%len(rainbowColors)]
-		b.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
-	}
-	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[len(rainbowColors)-1]).Render("╮"))
-	b.WriteString("\n")
+	content := strings.Join([]string{
+		"",
+		"  🛰️  Welcome, Buddy",
+		"",
+		"  " + line1,
+		"  an exclusive team of AI engineers and builders.",
+		"",
+		"  Pass the AI recruitment test to earn your place.",
+		"",
+		"  💡  30 questions  ·  6 min  ·  80% pass threshold",
+	}, "\n")
 
-	// 边框行
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(strings.Repeat(" ", 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	// 欢迎标题
-	welcomeTitle := "  🛰️  Welcome, Buddy                                    "
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(welcomeTitle)
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(strings.Repeat(" ", 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	// 描述行（Geoyuan 彩虹高亮）
-	line1 := "  You've found the gateway to " + RainbowText("Geoyuan") + " —"
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(padTo(line1, 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	line2 := "  an exclusive team of AI engineers and builders."
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(padTo(line2, 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(strings.Repeat(" ", 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	line3 := "  Pass the AI recruitment test to earn your place."
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(padTo(line3, 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(strings.Repeat(" ", 60))
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	line4 := "  💡  30 questions  ·  6 min  ·  80% pass threshold      "
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
-	b.WriteString(line4)
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
-
-	// 彩虹渐变底边框：╰ + 58×─ + ╯
-	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╰"))
-	for i := 0; i < 58; i++ {
-		c := rainbowColors[(i+1)%len(rainbowColors)]
-		b.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
-	}
-	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[len(rainbowColors)-1]).Render("╯"))
-	b.WriteString("\n")
-
-	return b.String()
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(66).
+		Render(content)
 }
 
 // padTo 把字符串（可能含 ANSI 序列）填充到指定显示宽度

@@ -315,15 +315,10 @@ func (m Model) userInfoString() string {
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
+
 	b.WriteString(m.headerBar("· Join Geoyuan ·"))
 
-	// 🌈 彩虹渐变 Geoyuan Logo
-	b.WriteString(RenderRainbowLogo())
-	b.WriteString(RenderNeonTagline())
-
-	b.WriteString("\n")
-
-	// 🛰️ 欢迎卡 (glow box)
+	// 🛰️ 欢迎卡 (先用 — 保证 Bubble Tea 视口优先显示)
 	b.WriteString(RenderWelcomeCard())
 	b.WriteString("\n")
 
@@ -361,6 +356,12 @@ func (m Model) viewRegister() string {
 	}
 
 	b.WriteString("\n  " + lipgloss.NewStyle().Foreground(cMuted).Render("↵ Enter to confirm  ·  Ctrl+C to exit  ·  Try :redeem <token>"))
+
+	// 🌈 彩虹渐变 Geoyuan Logo — 放底部避免 Bubble Tea 视口截断
+	b.WriteString("\n\n")
+	b.WriteString(RenderRainbowLogo())
+	b.WriteString(RenderNeonTagline())
+
 	return b.String()
 }
 
