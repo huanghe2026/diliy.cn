@@ -45,15 +45,13 @@ func envOr(key, def string) string {
 	return def
 }
 
-// Client — Polygon 客户端
+// Client — Polygon 客户端（每次调用独立派生超时 ctx）
 type Client struct {
-	cfg    Config
-	eth    *ethclient.Client
-	ctx    context.Context
-	cancel context.CancelFunc
+	cfg Config
+	eth *ethclient.Client
 }
 
-// New — 创建客户端（连接失败不 panic，返回 nil + error）
+// New — 创建客户端（连接失败返回 error，不 panic）
 func New(cfg Config) (*Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -62,58 +60,62 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("polygon rpc dial %s: %w", cfg.RPCURL, err)
 	}
-	return &Client{
-		cfg:    cfg,
-		eth:    eth,
-		ctx:    context.Background(),
-		cancel: cancel,
-	}, nil
+	return &Client{cfg: cfg, eth: eth}, nil
 }
 
 // Eth — 暴露底层 ethclient，给 abigen 绑定用（实现 bind.ContractBackend）
 func (c *Client) Eth() *ethclient.Client { return c.eth }
 
 // Close — 关连接
-func (c *Client) Close() {
-	c.cancel()
-	c.eth.Close()
-}
+func (c *Client) Close() { c.eth.Close() }
 
 // IsUp — 探活
 func (c *Client) IsUp() bool {
-	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := c.eth.ChainID(ctx)
 	return err == nil
 }
 
-// GasPrice — 当前 gas price
+// GasPrice — 当前 gas price（带 1 次重试）
 func (c *Client) GasPrice() (*big.Int, error) {
-	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
-	defer cancel()
-	return c.eth.SuggestGasPrice(ctx)
+	return withRetry(func() (*big.Int, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return c.eth.SuggestGasPrice(ctx)
+	})
 }
 
 // Balance — 地址 MATIC 余额 (wei → MATIC)
 func (c *Client) Balance(addrHex string) (float64, error) {
 	addr := common.HexToAddress(addrHex)
-	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
-	defer cancel()
-	wei, err := c.eth.BalanceAt(ctx, addr, nil)
+	wei, err := withRetry(func() (*big.Int, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return c.eth.BalanceAt(ctx, addr, nil)
+	})
 	if err != nil {
 		return 0, err
 	}
-	// MATIC 是 18 位
 	matic := new(big.Float).Quo(new(big.Float).SetInt(wei), big.NewFloat(1e18))
 	f, _ := matic.Float64()
 	return f, nil
 }
 
-// Nonce — 下一个交易 nonce
+// Nonce — 下一个交易 nonce（pending）
 func (c *Client) Nonce(addrHex string) (uint64, error) {
-	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
-	defer cancel()
-	return c.eth.PendingNonceAt(ctx, common.HexToAddress(addrHex))
+	addr := common.HexToAddress(addrHex)
+	type res struct {
+		n   uint64
+		err error
+	}
+	r, err := withRetry(func() (res, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		n, err := c.eth.PendingNonceAt(ctx, addr)
+		return res{n: n, err: err}, err
+	})
+	return r.n, err
 }
 
 // ContractAddr — 返回合约地址
@@ -122,16 +124,22 @@ func (c *Client) ContractAddr() common.Address {
 }
 
 // RPCURL — 返回 RPC 地址（用于日志）
-func (c *Client) RPCURL() string {
-	return c.cfg.RPCURL
-}
+func (c *Client) RPCURL() string { return c.cfg.RPCURL }
 
 // ChainID — 返回链 ID
-func (c *Client) ChainID() int64 {
-	return c.cfg.ChainID
-}
+func (c *Client) ChainID() int64 { return c.cfg.ChainID }
 
 // ─── 辅助 ────────────────────────────────────────────
+
+// withRetry — 简单 1 次重试包装（RPC 偶发抖动）
+func withRetry[T any](fn func() (T, error)) (T, error) {
+	v, err := fn()
+	if err == nil {
+		return v, nil
+	}
+	time.Sleep(300 * time.Millisecond)
+	return fn()
+}
 
 // HexToBytes — "0xabc" → []byte{0xab, 0xc}
 func HexToBytes(s string) ([]byte, error) {

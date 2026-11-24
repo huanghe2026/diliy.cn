@@ -160,7 +160,12 @@ func (p PhaseMint) Update(msg tea.Msg) (PhaseMint, tea.Cmd) {
 				p.err = ""
 				p.step = 5
 				return p, p.doMintCmd()
-			case "esc", "n", "N":
+			case "esc", "q":
+				// 直接退出 Mint 视图（包括 mint 失败后）
+				p.step = 99
+				return p, nil
+			case "n", "N":
+				// 回 step 1 重新输入标题
 				p.step = 1
 				p.titleIn.Focus()
 				return p, textinput.Blink
@@ -259,7 +264,7 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 		} else {
 			sb.WriteString("    Chain:     " + yellow.Render("offline preview") + "\n")
 		}
-		sb.WriteString("\n  [" + green.Render("Y") + "] Yes  [" + dim.Render("Esc") + "] Back\n")
+		sb.WriteString("\n  [" + green.Render("Y") + "] Mint  [" + dim.Render("N") + "] Edit  [" + dim.Render("Esc") + "] Cancel\n")
 		if p.mintErr != nil {
 			sb.WriteString(red.Render(fmt.Sprintf("\n  ✗ Previous attempt failed: %v", p.mintErr)) + "\n")
 		}

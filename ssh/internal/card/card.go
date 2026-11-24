@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -203,7 +204,7 @@ func (s *Service) mintOnChain(h3Index uint64, p MintParams, lat, lon float64, re
 		return nil, fmt.Errorf("mint reverted: %s", errReason)
 	}
 
-	// 从 Receipt 的 Minted 事件里提取 tokenId
+	// 从 Receipt 的 Minted 事件里提取 tokenId（失败直接报错，不要用 totalSupply 冒充）
 	var tokenID *big.Int
 	for _, log := range receipt.Logs {
 		ev, err := s.gyc.ParseMinted(*log)
@@ -213,9 +214,7 @@ func (s *Service) mintOnChain(h3Index uint64, p MintParams, lat, lon float64, re
 		}
 	}
 	if tokenID == nil {
-		// fallback：读 totalSupply
-		ts, _ := s.gyc.TotalSupply(&bind.CallOpts{Context: ctx})
-		tokenID = ts
+		return nil, fmt.Errorf("mint succeeded (tx=%s) but Minted event not found in receipt", tx.Hash().Hex())
 	}
 
 	return &MintResult{
@@ -235,7 +234,10 @@ func (s *Service) mintOnChain(h3Index uint64, p MintParams, lat, lon float64, re
 
 // ─── MyCards ─────────────────────────────────────────
 
-// MyCards — 查某地址所有 GeoyuanCard，读 metadata 拿 title/desc/color/latE4/lonE4/res/timestamp
+// metadataConcurrency — 并发拉 metadata 的上限（避免 RPC 限速）
+const metadataConcurrency = 6
+
+// MyCards — 查某地址所有 GeoyuanCard（并发拉 metadata）
 func (s *Service) MyCards(addrHex string) ([]Card, error) {
 	if s.gyc == nil {
 		return []Card{}, nil
@@ -248,34 +250,48 @@ func (s *Service) MyCards(addrHex string) ([]Card, error) {
 	if err != nil {
 		return nil, fmt.Errorf("myCards: %w", err)
 	}
-	out := make([]Card, 0, len(tokenIDs))
-	for _, tid := range tokenIDs {
-		md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
-		if err != nil {
-			// metadata 查不到时至少保留有 tokenId 的条目
-			out = append(out, Card{TokenID: tid.String(), Owner: addrHex})
-			continue
-		}
-		out = append(out, Card{
-			TokenID:   tid.String(),
-			H3Index:   md.H3Index,
-			Title:     md.Title,
-			Desc:      md.Description,
-			Color:     md.Color,
-			Lat:       float64(md.LatE4) / 10000.0,
-			Lon:       float64(md.LonE4) / 10000.0,
-			Res:       int(md.Res),
-			Timestamp: md.Timestamp.Int64(),
-			Owner:     addrHex,
-		})
+	return s.fetchMetadataBatch(ctx, tokenIDs, addrHex), nil
+}
+
+// fetchMetadataBatch — 并发拉一组 tokenId 的 metadata
+// 单张失败不阻塞整体，用占位 Card 顶替
+func (s *Service) fetchMetadataBatch(ctx context.Context, tokenIDs []*big.Int, ownerHex string) []Card {
+	out := make([]Card, len(tokenIDs))
+	sem := make(chan struct{}, metadataConcurrency)
+	var wg sync.WaitGroup
+	for i, tid := range tokenIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, tid *big.Int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
+			if err != nil {
+				out[i] = Card{TokenID: tid.String(), Owner: ownerHex}
+				return
+			}
+			out[i] = Card{
+				TokenID:   tid.String(),
+				H3Index:   md.H3Index,
+				Title:     md.Title,
+				Desc:      md.Description,
+				Color:     md.Color,
+				Lat:       float64(md.LatE4) / 10000.0,
+				Lon:       float64(md.LonE4) / 10000.0,
+				Res:       int(md.Res),
+				Timestamp: md.Timestamp.Int64(),
+				Owner:     ownerHex,
+			}
+		}(i, tid)
 	}
-	return out, nil
+	wg.Wait()
+	return out
 }
 
 // ─── 邻居匹配 ─────────────────────────────────────────
 
 // NeighborMatch — H3 k-ring 里真正被 mint 的卡（owner != self）
-// 用合约 neighborMatch(self, cells) 拿已 mint 的 tokenId，再读 metadata
+// 用合约 neighborMatch(self, cells) 拿已 mint 的 tokenId，再并发读 metadata
 func (s *Service) NeighborMatch(selfAddrHex string, h3Index uint64, k int) ([]Card, error) {
 	ring := h3.KRing(h3Index, k)
 	cells := make([]uint64, 0, len(ring))
@@ -300,26 +316,7 @@ func (s *Service) NeighborMatch(selfAddrHex string, h3Index uint64, k int) ([]Ca
 	if err != nil {
 		return nil, fmt.Errorf("neighborMatch: %w", err)
 	}
-	out := make([]Card, 0, len(tokenIDs))
-	for _, tid := range tokenIDs {
-		md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
-		if err != nil {
-			out = append(out, Card{TokenID: tid.String()})
-			continue
-		}
-		out = append(out, Card{
-			TokenID:   tid.String(),
-			H3Index:   md.H3Index,
-			Title:     md.Title,
-			Desc:      md.Description,
-			Color:     md.Color,
-			Lat:       float64(md.LatE4) / 10000.0,
-			Lon:       float64(md.LonE4) / 10000.0,
-			Res:       int(md.Res),
-			Timestamp: md.Timestamp.Int64(),
-		})
-	}
-	return out, nil
+	return s.fetchMetadataBatch(ctx, tokenIDs, ""), nil
 }
 
 // ─── 工具 ────────────────────────────────────────────
