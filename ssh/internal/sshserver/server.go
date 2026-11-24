@@ -25,6 +25,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"geoyuan.cn/ssh/internal/chat"
+	"geoyuan.cn/ssh/internal/geo"
 	"geoyuan.cn/ssh/internal/questiongen"
 	"geoyuan.cn/ssh/internal/store"
 	"geoyuan.cn/ssh/internal/tui"
@@ -182,6 +183,13 @@ func (s *Server) handleSession(ch ssh.Channel, requests <-chan *ssh.Request, fp 
 		}
 	}()
 
+	// 🌍 查 IP 地理位置（带缓存 + 2s 超时，失败降级显示 IP）
+	var geoLoc string
+	if loc := geo.Resolve(ip); loc != nil {
+		geoLoc = loc.Display()
+	}
+	log.Printf("conn from %s geo=%q host=%q", ip, geoLoc, host)
+
 	// 查用户（新用户为 nil）
 	user, err := s.store.GetUserByFingerprint(fp)
 	if err != nil {
@@ -190,7 +198,7 @@ func (s *Server) handleSession(ch ssh.Channel, requests <-chan *ssh.Request, fp 
 		return
 	}
 
-	model := tui.New(s.store, s.generator, fp, user, s.chatHub, ip, host)
+	model := tui.New(s.store, s.generator, fp, user, s.chatHub, ip, host, geoLoc)
 	prog := tea.NewProgram(
 		model,
 		tea.WithInput(ch),

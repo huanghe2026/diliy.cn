@@ -64,6 +64,7 @@ type Model struct {
 	// 连接信息（UI 展示用）
 	remoteIP   string
 	remoteHost string
+	geoLoc     string // 地理位置 (e.g. "Hangzhou, China")
 
 	// 注册
 	nameInput textinput.Model
@@ -97,15 +98,16 @@ type Model struct {
 }
 
 // New 构造 TUI Model
-func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User, chatHub *chat.Hub, ip, host string) Model {
+func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User, chatHub *chat.Hub, ip, host, geo string) Model {
 	m := Model{
-		store:     s,
-		generator: gen,
-		fp:        fp,
-		user:      user,
-		ChatHub:   chatHub,
-		remoteIP:  ip,
+		store:      s,
+		generator:  gen,
+		fp:         fp,
+		user:       user,
+		ChatHub:    chatHub,
+		remoteIP:   ip,
 		remoteHost: host,
+		geoLoc:     geo,
 	}
 	switch {
 	case user != nil && user.Status == store.StatusApproved:
@@ -325,11 +327,17 @@ func (m Model) viewRegister() string {
 	b.WriteString(RenderWelcomeCard())
 	b.WriteString("\n")
 
-	// 📍 连接信息
+	// 📍 连接信息（地理位置优先，降级 IP）
 	if m.remoteIP != "" {
-		ipInfo := fmt.Sprintf("  📍 Connected from %s", m.remoteIP)
-		if m.remoteHost != "" && m.remoteHost != m.remoteIP {
-			ipInfo += fmt.Sprintf("  ·  %s", m.remoteHost)
+		var ipInfo string
+		if m.geoLoc != "" {
+			ipInfo = fmt.Sprintf("  📍 Connected from %s", m.geoLoc)
+			// 本地连接 (127.0.0.1) 就不显示 IP 了
+			if m.remoteIP != "127.0.0.1" && m.remoteIP != "::1" {
+				ipInfo += fmt.Sprintf("  ·  %s", m.remoteIP)
+			}
+		} else {
+			ipInfo = fmt.Sprintf("  📍 Connected from %s", m.remoteIP)
 		}
 		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render(ipInfo))
 		b.WriteString("\n\n")
