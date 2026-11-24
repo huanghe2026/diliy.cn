@@ -4,18 +4,23 @@ package geo
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-// Location IP 地理信息（精简版）
+// Location IP 地理信息
 type Location struct {
-	CountryCode string `json:"country_code"`
-	CountryName string `json:"country_name"`
-	Region      string `json:"region"`
-	City        string `json:"city"`
-	Org         string `json:"org"` // ISP / 组织
+	CountryCode string  `json:"country_code"`
+	CountryName string  `json:"country_name"`
+	Region      string  `json:"region"`
+	City        string  `json:"city"`
+	Org         string  `json:"org"` // ISP / 组织
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
 }
 
 // Display 生成人类可读的位置字符串
@@ -85,7 +90,7 @@ func Resolve(ip string) *Location {
 
 // ═══════════════════════════════════════════════
 //  📡 源 1: ipinfo.io (免费 50k req/月)
-//  格式: { city, region, country, org, ... }
+//  格式: { city, region, country, org, loc: "lat,lon", ... }
 // ═══════════════════════════════════════════════
 func queryIPinfo(ip string) *Location {
 	resp, err := httpCli.Get("https://ipinfo.io/" + ip + "/json")
@@ -102,19 +107,22 @@ func queryIPinfo(ip string) *Location {
 		return nil
 	}
 
-	// 这个源对私有 IP 也会返回有效数据，不需要 error 检查
+	lat, lon := parseLoc(strField(raw, "loc"))
+
 	return &Location{
 		City:        strField(raw, "city"),
 		Region:      strField(raw, "region"),
 		CountryCode: strField(raw, "country"),
 		CountryName: countryName(raw["country"]),
 		Org:         strField(raw, "org"),
+		Lat:         lat,
+		Lon:         lon,
 	}
 }
 
 // ═══════════════════════════════════════════════
 //  📡 源 2: ip-api.com (免费, 45 req/min, 无 key)
-//  格式: { status, country, countryCode, regionName, city, isp, org, ... }
+//  格式: { status, lat, lon, countryCode, regionName, city, isp, org, ... }
 // ═══════════════════════════════════════════════
 func queryIPAPI(ip string) *Location {
 	resp, err := httpCli.Get("http://ip-api.com/json/" + ip)
@@ -134,12 +142,22 @@ func queryIPAPI(ip string) *Location {
 		return nil
 	}
 
+	var lat, lon float64
+	if v, ok := raw["lat"].(float64); ok {
+		lat = v
+	}
+	if v, ok := raw["lon"].(float64); ok {
+		lon = v
+	}
+
 	return &Location{
 		City:        strField(raw, "city"),
 		Region:      strField(raw, "regionName"),
 		CountryCode: strField(raw, "countryCode"),
 		CountryName: strField(raw, "country"),
 		Org:         firstNonEmpty(strField(raw, "org"), strField(raw, "isp")),
+		Lat:         lat,
+		Lon:         lon,
 	}
 }
 
@@ -163,6 +181,29 @@ func firstNonEmpty(s ...string) string {
 	}
 	return ""
 }
+
+// parseLoc ipinfo loc 格式 "lat,lon" → 两个 float64
+func parseLoc(loc string) (float64, float64) {
+	parts := strings.Split(loc, ",")
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	lat, _ := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lon, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	return lat, lon
+}
+
+// LatLonFromIP — 便利函数：直接拿某 IP 的经纬度，拿不到返回 (0, 0)
+func LatLonFromIP(ip string) (float64, float64) {
+	l := Resolve(ip)
+	if l == nil || (l.Lat == 0 && l.Lon == 0) {
+		return 0, 0
+	}
+	return l.Lat, l.Lon
+}
+
+// fmt 是 import 了但没用到 — 去掉未使用？加个简单 wrapper
+var _ = fmt.Sprintf
 
 // countryName 把 ISO code 转全名（简单 map，够用）
 var countryNames = map[string]string{
