@@ -193,7 +193,7 @@ func RenderWelcomeCard() string {
 	b.WriteString(RainbowBorder(62, '╭'))
 	for i := 0; i < 58; i++ {
 		c := rainbowColors[i%len(rainbowColors)]
-		b.WriteString(lipgloss.NewStyle().Foreground(c).Render('─'))
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
 	}
 	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╮"))
 	b.WriteString("\n")
@@ -246,7 +246,7 @@ func RenderWelcomeCard() string {
 	b.WriteString(RainbowBorder(62, '╰'))
 	for i := 0; i < 58; i++ {
 		c := rainbowColors[i%len(rainbowColors)]
-		b.WriteString(lipgloss.NewStyle().Foreground(c).Render('─'))
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
 	}
 	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[len(rainbowColors)-1]).Render("╯"))
 	b.WriteString("\n")
