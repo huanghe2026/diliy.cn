@@ -31,11 +31,20 @@ var (
 )
 
 // ═══════════════════════════════════════════════
-//  🌈 Geoyuan ASCII Logo — 彩虹渐变渲染
+//  🌈 Geoyuan ASCII Logo — 大尺寸 figlet 风格 + 彩虹渐变
 // ═══════════════════════════════════════════════
 
-// geoyuanLogoRaw 原始 ASCII art (6 行)
-const geoyuanLogoRaw = `
+// geoyuanLogoBig 大尺寸 Geoyuan logo (7 行，更醒目)
+const geoyuanLogoBig = `
+  ____           _                  _         
+ / ___| ___   __| | ___   _ _ __   _| |_  ___ 
+| |  _ / _ \ / _\` |/ _ \ | '_ \ / _\` | \ \/ / 
+| |_| | (_) | (_| |  __/ | | | | (_| |  >  <  
+ \____|\___/ \__,_|\___| |_| |_|\__,_| /_/\_\ 
+`
+
+// geoyuanLogoClassic 经典 block 字母 logo (6 行) — 保留用于小屏幕
+const geoyuanLogoClassic = `
  ██████╗ ███████╗ ██╗   ██╗ ██████╗ ██╗   ██╗ ██████╗ ██╗   ██╗
  ██╔══██╗██╔════╝ ██║   ██║██╔═══██╗██║   ██║██╔═══██╗╚██╗ ██╔╝
  ██████╔╝█████╗   ██║   ██║██║   ██║██║   ██║██║   ██║ ╚████╔╝ 
@@ -44,12 +53,13 @@ const geoyuanLogoRaw = `
  ╚═╝  ╚═╝╚══════╝   ╚═══╝   ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝   
 `
 
-// neonTagline 霓虹标语 + 装饰
+// neonTagline 霓虹标语 (更长更有辨识度)
 const neonTagline = `
-     ◆ ◆ ◆   ♥  AI Team · SSH Recruitment Challenge  ♥   ◆ ◆ ◆
+   ◆ ◆ ◆    ♥    AI Team · SSH Recruitment Challenge    ♥    ◆ ◆ ◆
+    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 `
 
-// rainbowColors 用于逐字符渐变渲染 Geoyuan logo
+// rainbowColors 彩虹色带（红→粉→紫→青→绿→金→红 循环）
 var rainbowColors = []lipgloss.Color{
 	lipgloss.Color("#ff3864"), // 红
 	lipgloss.Color("#ff6ec7"), // 粉
@@ -57,44 +67,81 @@ var rainbowColors = []lipgloss.Color{
 	lipgloss.Color("#00f5ff"), // 青
 	lipgloss.Color("#00ff9d"), // 绿
 	lipgloss.Color("#ffd700"), // 金
+	lipgloss.Color("#ff3864"), // 红 (循环)
+	lipgloss.Color("#ff6ec7"), // 粉
 }
 
-// RenderRainbowLogo 把 Geoyuan ASCII logo 按列做彩虹渐变
+// ═══════════════════════════════════════════════
+//  🔤 核心：逐字符彩虹渐变渲染
+// ═══════════════════════════════════════════════
+
+// rainbowChar 给单个 rune 上色
+func rainbowChar(ch rune, idx int) string {
+	if ch == ' ' || ch == '\n' {
+		return string(ch)
+	}
+	c := rainbowColors[idx%len(rainbowColors)]
+	return lipgloss.NewStyle().
+		Foreground(c).
+		Bold(true).
+		Render(string(ch))
+}
+
+// RainbowText 给任意字符串做彩虹渐变（公共函数）
+func RainbowText(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	for i, r := range runes {
+		b.WriteString(rainbowChar(r, i))
+	}
+	return b.String()
+}
+
+// RainbowBorder 渲染彩色边框顶/底
+func RainbowBorder(width int, borderChar rune) string {
+	var b strings.Builder
+	for i := 0; i < width; i++ {
+		c := rainbowColors[i%len(rainbowColors)]
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render(string(borderChar)))
+	}
+	return b.String()
+}
+
+// RenderRainbowLogo 渲染大尺寸 Geoyuan logo + 彩虹渐变
 func RenderRainbowLogo() string {
-	lines := strings.Split(strings.TrimLeft(geoyuanLogoRaw, "\n"), "\n")
+	// 检测终端宽度 — 选合适尺寸
+	lines := strings.Split(strings.TrimLeft(geoyuanLogoBig, "\n"), "\n")
 	var result strings.Builder
-	totalWidth := 65
 
 	for _, line := range lines {
 		runes := []rune(line)
-		colorIdx := 0
-		for i := 0; i < totalWidth; i++ {
-			var ch rune = ' '
-			if i < len(runes) {
-				ch = runes[i]
-			}
-			// 仅对非空格字符上色
-			if ch != ' ' && ch != '\n' {
-				c := rainbowColors[colorIdx%len(rainbowColors)]
-				result.WriteString(lipgloss.NewStyle().Foreground(c).Render(string(ch)))
-			} else {
-				result.WriteString(" ")
-			}
-			colorIdx++
+		for i, r := range runes {
+			result.WriteString(rainbowChar(r, i))
 		}
 		result.WriteString("\n")
 	}
 	return result.String()
 }
 
-// RenderNeonTagline 渲染霓虹闪烁标语
+// RenderNeonTagline 渲染彩虹霓虹标语 + 分隔线
 func RenderNeonTagline() string {
-	s := neonTagline
-	return lipgloss.NewStyle().
-		Bold(true).
-		Align(lipgloss.Center).
-		Width(80).
-		Render(s)
+	lines := strings.Split(strings.TrimLeft(neonTagline, "\n"), "\n")
+	var b strings.Builder
+
+	// 标题行：◆ ◆ ◆ ♥ AI Team ...
+	runes := []rune(lines[0])
+	for i, r := range runes {
+		b.WriteString(rainbowChar(r, i))
+	}
+	b.WriteString("\n")
+
+	// 分隔线 ▓▓▓▓▓...
+	if len(lines) > 1 {
+		b.WriteString(RainbowBorder(len([]rune(lines[1])), '▓'))
+		b.WriteString("\n")
+	}
+
+	return b.String()
 }
 
 // RenderGlowBox 用渐变边框渲染一个发光盒子
@@ -138,23 +185,103 @@ func RenderGlowBox(content string, width int, colors []lipgloss.Color) string {
 	return b.String()
 }
 
-// RenderWelcomeCard 注册页主欢迎卡
+// RenderWelcomeCard 注册页主欢迎卡 — 带彩虹 Geoyuan
 func RenderWelcomeCard() string {
-	w := `
-  ╭──────────────────────────────────────────────────────────╮
-  │                                                          │
-  │   🛰️  Welcome, Buddy                                    │
-  │                                                          │
-  │   You've found the gateway to Geoyuan —                  │
-  │   an exclusive team of AI engineers and builders.        │
-  │                                                          │
-  │   Pass the AI recruitment test to earn your place.       │
-  │                                                          │
-  │   💡  30 questions  ·  6 min  ·  80% pass threshold       │
-  │                                                          │
-  ╰──────────────────────────────────────────────────────────╯
-`
-	return w
+	var b strings.Builder
+
+	// 彩虹渐变边框顶
+	b.WriteString(RainbowBorder(62, '╭'))
+	for i := 0; i < 58; i++ {
+		c := rainbowColors[i%len(rainbowColors)]
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render('─'))
+	}
+	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[0]).Render("╮"))
+	b.WriteString("\n")
+
+	// 边框行
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(strings.Repeat(" ", 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	// 欢迎标题（彩虹 Geoyuan）
+	welcomeTitle := "  🛰️  Welcome, Buddy                                    "
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(welcomeTitle)
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(strings.Repeat(" ", 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	// 描述行（Geoyuan 彩虹高亮）
+	line1 := "  You've found the gateway to " + RainbowText("Geoyuan") + " —"
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(padTo(line1, 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	line2 := "  an exclusive team of AI engineers and builders."
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(padTo(line2, 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(strings.Repeat(" ", 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	line3 := "  Pass the AI recruitment test to earn your place."
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(padTo(line3, 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(strings.Repeat(" ", 60))
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	line4 := "  💡  30 questions  ·  6 min  ·  80% pass threshold      "
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│"))
+	b.WriteString(line4)
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Render("│\n"))
+
+	// 底边框
+	b.WriteString(RainbowBorder(62, '╰'))
+	for i := 0; i < 58; i++ {
+		c := rainbowColors[i%len(rainbowColors)]
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render('─'))
+	}
+	b.WriteString(lipgloss.NewStyle().Foreground(rainbowColors[len(rainbowColors)-1]).Render("╯"))
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+// padTo 把字符串（可能含 ANSI 序列）填充到指定显示宽度
+func padTo(s string, width int) string {
+	// 粗略估计 ANSI 序列长度 — 去掉 \x1b[...m 和 lipgloss 输出
+	ansiStripped := stripANSI(s)
+	if len(ansiStripped) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(ansiStripped))
+}
+
+// stripANSI 去掉 ANSI 转义序列（简单版）
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // RenderCongratsPass 通过恭喜画面
