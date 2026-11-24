@@ -330,13 +330,13 @@ func (m Model) viewRegister() string {
 	// 📍 连接信息（地理位置优先，降级 IP）
 	if m.remoteIP != "" {
 		var ipInfo string
-		if m.geoLoc != "" {
+		switch {
+		case m.remoteIP == "127.0.0.1" || m.remoteIP == "::1":
+			ipInfo = "  📍 Connected from localhost"
+		case m.geoLoc != "":
 			ipInfo = fmt.Sprintf("  📍 Connected from %s", m.geoLoc)
-			// 本地连接 (127.0.0.1) 就不显示 IP 了
-			if m.remoteIP != "127.0.0.1" && m.remoteIP != "::1" {
-				ipInfo += fmt.Sprintf("  ·  %s", m.remoteIP)
-			}
-		} else {
+			ipInfo += fmt.Sprintf("  ·  %s", m.remoteIP)
+		default:
 			ipInfo = fmt.Sprintf("  📍 Connected from %s", m.remoteIP)
 		}
 		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render(ipInfo))
