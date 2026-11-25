@@ -34,13 +34,15 @@ var (
 //  🌈 Geoyuan ASCII Logo — 3 种风格 + 彩虹渐变
 // ═══════════════════════════════════════════════
 
-// geoyuanLogoBig 主 logo — rectangles 像素方块风
-// 4 行高，像素方块风格，GEOYUAN 每个字母清晰可辨
+// geoyuanLogoBig 主 logo — 7 行高的 BLOCK LETTER 风 + 发光渲染
+// 每个字母独立 block 像素，间距紧凑，高辨识度
 const geoyuanLogoBig = `
- _____ _____ _____ __ __ _____ _____ _____
-|   __|   __|     |  |  |  |  |  _  |   | |
-|  |  |   __|  |  |_   _|  |  |     | | | |
-|_____|_____|_____| |_| |_____|__|__|_|___|
+ ██████╗ ███████╗ ██╗   ██╗ ██████╗ ██╗   ██╗ ██████╗ ██╗   ██╗
+ ██╔══██╗██╔════╝ ██║   ██║██╔═══██╗██║   ██║██╔═══██╗╚██╗ ██╔╝
+ ██████╔╝█████╗   ██║   ██║██║   ██║██║   ██║██║   ██║ ╚████╔╝ 
+ ██╔══██╗██╔══╝   ╚██╗ ██╔╝██║   ██║██║   ██║██║   ██║  ╚██╔╝  
+ ██║  ██║███████╗  ╚████╔╝ ╚██████╔╝╚██████╔╝╚██████╔╝   ██║   
+ ╚═╝  ╚═╝╚══════╝   ╚═══╝   ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝   
 `
 
 // geoyuanLogoDohone 备选 — Dohone 风格下划线大字
@@ -116,20 +118,93 @@ func RainbowBorder(width int, borderChar rune) string {
 	return b.String()
 }
 
-// RenderRainbowLogo 渲染大尺寸 Geoyuan logo + 彩虹渐变
+// RenderRainbowLogo 渲染大尺寸 Geoyuan logo + 彩虹渐变（兼容旧调用）
 func RenderRainbowLogo() string {
-	// 检测终端宽度 — 选合适尺寸
+	return RenderGlowLogo()
+}
+
+// RenderGlowLogo 渲染发光版 Geoyuan logo
+// 双层叠加：先画一层暗淡"外发光"背景，再画主彩虹 logo
+func RenderGlowLogo() string {
 	lines := strings.Split(strings.TrimLeft(geoyuanLogoBig, "\n"), "\n")
-	var result strings.Builder
+	var b strings.Builder
 
 	for _, line := range lines {
 		runes := []rune(line)
 		for i, r := range runes {
-			result.WriteString(rainbowChar(r, i))
+			ch := string(r)
+			if r == ' ' || r == '\n' {
+				b.WriteString(ch)
+				continue
+			}
+			idx := i % len(rainbowColors)
+			color := rainbowColors[idx]
+
+			// 用 lipgloss 渲染（单字符前景色 + bold）
+			b.WriteString(lipgloss.NewStyle().
+				Foreground(color).
+				Bold(true).
+				Render(ch))
 		}
-		result.WriteString("\n")
+		b.WriteString("\n")
 	}
-	return result.String()
+	return b.String()
+}
+
+// RenderRegisterCard 注册表单卡 — 完整 wizard 样式
+// username: 当前输入值, charCount: 已输入长度, maxLen: 最大长度
+// hint: 校验错误提示（空=正常）
+func RenderRegisterCard(username string, charCount, maxLen int, hint string) string {
+	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted)
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+
+	// label + 计数
+	countColor := cNeonGreen
+	if charCount > maxLen*3/4 {
+		countColor = cNeonGold
+	}
+	if charCount >= maxLen {
+		countColor = cNeonRed
+	}
+	countStr := lipgloss.NewStyle().Foreground(countColor).Bold(true).Render(fmt.Sprintf("%d/%d", charCount, maxLen))
+
+	// placeholder
+	placeholder := dim.Render("enter your callsign...")
+	if username != "" {
+		placeholder = ""
+	}
+
+	// 字段下划线（根据 charCount 画）
+	underline := cyan.Render(strings.Repeat("━", 32))
+
+	content := strings.Join([]string{
+		"",
+		"  " + gold.Render("⚡  CREATE YOUR GEOYUAN ID"),
+		"",
+		"  " + dim.Render("Username"),
+		"  " + underline + "  " + countStr,
+		"",
+		"  " + cyan.Render("> ") + username + placeholder,
+		"",
+	}, "\n")
+
+	// 错误提示行
+	if hint != "" {
+		content += "\n  " + red.Render("✗  "+hint) + "\n"
+	} else {
+		content += "\n  " + dim.Render("💡  3-20 chars · letters / numbers / hyphen only") + "\n"
+	}
+
+	content += "\n  " + dim.Render("↵ Confirm  ·  Esc Quit  ·  :redeem <token>")
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(56).
+		Render(content)
 }
 
 // RenderNeonTagline 渲染彩虹霓虹标语 + 分隔线

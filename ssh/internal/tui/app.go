@@ -619,55 +619,43 @@ func (m Model) viewRegister() string {
 	var b strings.Builder
 	h := m.termHeight
 	if h == 0 {
-		h = 24 // 默认 24 行，兼容 WindowSizeMsg 还没到的情况
+		h = 24
 	}
 
-	switch {
-	case h >= 30:
-		// ╔══════════════════════════════════════╗
-		// ║ 完整版（Logo + Tagline + Header +    ║
-		// ║  Welcome卡 + 连接 + 注册）          ║
-		// ╚══════════════════════════════════════╝
-		b.WriteString(RenderRainbowLogo())
-		b.WriteString(RenderNeonTagline())
-		b.WriteString("\n")
-		b.WriteString(m.headerBarCompact())
-		b.WriteString(RenderWelcomeCard())
-		b.WriteString("\n")
-		b.WriteString(m.connectionLine())
-		b.WriteString("\n\n")
-		b.WriteString(m.registerInput())
+	// 顶部：大 logo + tagline
+	b.WriteString(RenderGlowLogo())
+	b.WriteString(RenderNeonTagline())
+	b.WriteString("\n")
 
-	case h >= 20:
-		// ╔══════════════════════════════════════╗
-		// ║ 中版（Logo + Header + 一行欢迎 +     ║
-		// ║ 连接 + 注册）                        ║
-		// ╚══════════════════════════════════════╝
-		b.WriteString(RenderRainbowLogo())
-		b.WriteString("\n")
-		b.WriteString(m.headerBarCompact())
-		b.WriteString(m.oneLineWelcome())
-		b.WriteString("\n\n")
-		b.WriteString(m.connectionLine())
-		b.WriteString("\n\n")
-		b.WriteString(m.registerInput())
-
-	default:
-		// ╔══════════════════════════════════════╗
-		// ║ 最小版（Header + 注册）              ║
-		// ╚══════════════════════════════════════╝
-		b.WriteString(m.headerBarCompact())
-		b.WriteString(m.registerInput())
+	// 注册表单卡（带 label + 下划线 + 字数计数 + 校验 hint）
+	name := m.nameInput.Value()
+	hint := ""
+	if name != "" {
+		if len(name) < 3 {
+			hint = "too short — minimum 3 characters"
+		} else if len(name) > 20 {
+			hint = "too long — maximum 20 characters"
+		} else if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(name) {
+			hint = "only letters, numbers, hyphen and underscore allowed"
+		}
 	}
+	if m.inputErr != "" {
+		hint = m.inputErr
+	}
+	b.WriteString(RenderRegisterCard(name, len(name), 20, hint))
+	b.WriteString("\n")
+
+	// 底部连接信息
+	b.WriteString(m.connectionLine())
 
 	return b.String()
 }
 
+// registerInput 已废弃 — viewRegister 直接用 RenderRegisterCard 完整替换
+func (m Model) registerInput() string { return "" }
+
 // connectionLine 一行版连接信息
 func (m Model) connectionLine() string {
-	if m.remoteIP == "" {
-		return ""
-	}
 	loc := m.remoteIP
 	switch {
 	case m.remoteIP == "127.0.0.1" || m.remoteIP == "::1":
@@ -678,29 +666,15 @@ func (m Model) connectionLine() string {
 	return lipgloss.NewStyle().Foreground(cNeonCyan).Render("  📍 " + loc)
 }
 
-// oneLineWelcome 一行欢迎（Geoyuan 彩虹高亮）
+// oneLineWelcome 一行欢迎（Geoyuan 彩虹高亮）— 保留给小屏幕 fallback
 func (m Model) oneLineWelcome() string {
 	return "  🛰️  Welcome, Buddy — you've found the gateway to " + RainbowText("Geoyuan")
 }
 
-// registerInput 注册输入区
-func (m Model) registerInput() string {
-	var b strings.Builder
-	ti := m.nameInput
-	ti.Prompt = "  " + lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true).Render(">") + " "
+// registerInput 注册输入区（已废弃，viewRegister 直接调 RenderRegisterCard）
+func (m Model) registerInput_DEPRECATED() string { return "" }
 
-	b.WriteString(lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("  ⚡  Register"))
-	b.WriteString("\n\n  ")
-	b.WriteString(ti.View())
-
-	if m.inputErr != "" {
-		b.WriteString("\n  " + styleErr.Render("✗  "+m.inputErr))
-	}
-	b.WriteString("\n\n  " + lipgloss.NewStyle().Foreground(cMuted).Render("↵ confirm  ·  Ctrl+C exit  ·  :redeem <token>"))
-	return b.String()
-}
-
-// headerBarCompact — 精简版 header，去掉右侧用户信息 + 80 宽分隔线
+// headerBarCompact — 精简版 header，去掉右侧用户信息 + 80 宽分隔线（已废弃，保留兼容）
 func (m Model) headerBarCompact() string {
 	var b strings.Builder
 	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
