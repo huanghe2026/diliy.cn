@@ -60,7 +60,7 @@ const (
 //  📐 Reusable Styles — 全部移到 styles.go 统一管理
 // ═══════════════════════════════════════════════
 
-var usernameRe = regexp.MustCompile(`^[a-z0-9_]{2,20}$`)
+// usernameRe / displayNameRe 定义在 updateRegister() 前的 var block 里
 
 // ═══════════════════════════════════════════════
 //
@@ -84,9 +84,13 @@ type Model struct {
 	remoteHost string
 	geoLoc     string // 地理位置 (e.g. "Hangzhou, China")
 
-	// 注册
-	nameInput textinput.Model
-	inputErr  string
+	// 注册向导（4 个字段）
+	nameInput      textinput.Model // field 0: username
+	displayInput   textinput.Model // field 1: display name (optional)
+	taglineInput   textinput.Model // field 2: tagline (optional)
+	langCursor     int             // field 3: 0=zh 1=en
+	registerStep   int             // 0-3 当前字段
+	inputErr       string
 
 	// 答题
 	questions []questions.Question
@@ -179,12 +183,30 @@ func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User
 	case user != nil:
 		m.phase = PhaseRetry
 	default:
-		ti := textinput.New()
-		ti.Placeholder = "2-20 位小写字母/数字/下划线"
-		ti.CharLimit = 120 // 同时容纳 :redeem + 32 字符 token；用户名校验仍限 20
-		ti.Prompt = "用户名: "
-		ti.Focus()
-		m.nameInput = ti
+		// Field 0: Username (REQUIRED, 3-20 alnum/hyphen)
+		ti1 := textinput.New()
+		ti1.Placeholder = "3-20 chars · letters / numbers / hyphen"
+		ti1.CharLimit = 120 // 同时容纳 :redeem + 32 字符 token；用户名校验仍限 20
+		ti1.Prompt = "> "
+		ti1.Focus()
+		m.nameInput = ti1
+
+		// Field 1: Display Name (optional, 2-30)
+		ti2 := textinput.New()
+		ti2.Placeholder = "How should we call you?"
+		ti2.CharLimit = 30
+		ti2.Prompt = "> "
+		m.displayInput = ti2
+
+		// Field 2: Tagline (optional, ≤80)
+		ti3 := textinput.New()
+		ti3.Placeholder = "One line about you / your project"
+		ti3.CharLimit = 80
+		ti3.Prompt = "> "
+		m.taglineInput = ti3
+
+		m.langCursor = 1 // 默认 English
+		m.registerStep = 0
 		m.phase = PhaseRegister
 	}
 	return m
@@ -673,7 +695,7 @@ func (m Model) userInfoString() string {
 
 // ═══════════════════════════════════════════════
 //
-//	📝 注册页 — 按终端高度自适应，任何尺寸都全屏完美
+//	📝 注册向导 — 4 字段同卡展示
 //
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
@@ -685,26 +707,195 @@ func (m Model) viewRegister() string {
 	// 启动欢迎 splash 横幅（Register 页独有的开场）
 	b.WriteString("\n" + RenderSplash(m.termWidth) + "\n\n")
 
-	// 注册表单卡（带 label + 下划线 + 字数计数 + 校验 hint）
-	name := m.nameInput.Value()
-	hint := ""
-	if name != "" {
-		if len(name) < 3 {
-			hint = "too short — minimum 3 characters"
-		} else if len(name) > 20 {
-			hint = "too long — maximum 20 characters"
-		} else if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(name) {
-			hint = "only letters, numbers, hyphen and underscore allowed"
+	// ═══ 颜色 / 样式 ═══
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
+	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
+	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
+
+	// ═══ 进度 header ═══
+	var content strings.Builder
+	content.WriteString(gold.Render("  📝  CREATE YOUR GEOYUAN ID") + "\n\n")
+
+	// Step hint（当前步骤标题）
+	stepTitles := []string{
+		"Username (required)",
+		"Display Name (optional)",
+		"Tagline / Bio (optional)",
+		"Language",
+	}
+	stepDescs := []string{
+		"3-20 chars · letters / numbers / hyphen",
+		"How should we call you?",
+		"One line about you / your project",
+		"Pick your preferred language",
+	}
+	content.WriteString(cyan.Render(fmt.Sprintf("  ◆ Step %d/4  ·  %s", m.registerStep+1, stepTitles[m.registerStep])) + "\n")
+	content.WriteString(dim.Render("     "+stepDescs[m.registerStep]) + "\n\n")
+
+	// ═══ 字段 0: Username ═══
+	content.WriteString(m.renderFieldRow(
+		"  Username",           // label
+		m.nameInput.Value(),   // value
+		0,                     // step index
+		true,                  // required
+		nil,                   // custom validator (nil = 默认)
+	))
+	content.WriteString("\n")
+
+	// ═══ 字段 1: Display Name ═══
+	content.WriteString(m.renderFieldRow(
+		"  Display Name",
+		m.displayInput.Value(),
+		1,
+		false, // optional
+		nil,
+	))
+	content.WriteString("\n")
+
+	// ═══ 字段 2: Tagline ═══
+	content.WriteString(m.renderFieldRow(
+		"  Tagline",
+		m.taglineInput.Value(),
+		2,
+		false,
+		nil,
+	))
+	content.WriteString("\n")
+
+	// ═══ 字段 3: Language ═══
+	langRow := "  Language   "
+	// zh
+	zhFlag := "🇨🇳 中文"
+	enFlag := "🇺🇸 English"
+	zhStyle := dim.Render(zhFlag)
+	enStyle := dim.Render(enFlag)
+	if m.registerStep == 3 {
+		if m.langCursor == 0 {
+			zhStyle = cyan.Render("▶ " + zhFlag)
+			enStyle = dim.Render("  " + enFlag)
+		} else {
+			zhStyle = dim.Render("  " + zhFlag)
+			enStyle = cyan.Render("▶ " + enFlag)
+		}
+	} else {
+		if m.langCursor == 0 {
+			zhStyle = green.Render(zhFlag)
+		} else {
+			enStyle = green.Render(enFlag)
 		}
 	}
-	if m.inputErr != "" {
-		hint = m.inputErr
+	langRow += zhStyle + "   " + enStyle
+	if m.registerStep != 3 {
+		langRow += "   " + green.Render("✅ ok")
+	} else {
+		langRow += "   " + dim.Render("(← → or 1/2)")
 	}
-	b.WriteString(RenderRegisterCard(name, len(name), 20, hint))
-	b.WriteString("\n")
+	content.WriteString(langRow)
+	content.WriteString("\n\n")
+
+	// ═══ 错误提示 ═══
+	if m.inputErr != "" {
+		content.WriteString("  " + red.Render("✗  "+m.inputErr) + "\n\n")
+	}
+
+	// ═══ 底部快捷键 hint ═══
+	content.WriteString(dim.Render("  💡  Tab/↓ Next  ·  Shift+Tab/↑ Prev  ·  Enter Submit  ·  :skip all  ·  :redeem <token>"))
+
+	// ═══ 组装卡片 ═══
+	cardWidth := 72
+	card := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(cardWidth).
+		Render(content.String())
+
+	b.WriteString(card)
+	b.WriteString("\n\n")
 
 	// 底部连接信息
 	b.WriteString(m.connectionLine())
+
+	return b.String()
+}
+
+// renderFieldRow 渲染一行字段（含 label + 当前值 / textinput.View + ✅ / ⚠）
+func (m Model) renderFieldRow(label, value string, step int, required bool, validator func(string) bool) string {
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
+	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
+	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
+
+	var b strings.Builder
+
+	// label 行
+	labelStr := label
+	if !required {
+		labelStr += dim.Render(" (optional)")
+	}
+	b.WriteString(labelStr + "  ")
+
+	// 计算状态
+	var statusMark string
+	isCurrent := m.registerStep == step
+	valid := true
+	displayVal := value
+
+	switch step {
+	case 0:
+		valid = usernameRe.MatchString(value)
+	case 1:
+		valid = value == "" || displayNameRe.MatchString(value)
+	case 2:
+		valid = len([]rune(value)) <= 80
+	}
+
+	// 当前字段：显示 textinput.View()
+	if isCurrent {
+		// 用 cyan 背景 + underline 样式渲染当前输入
+		inputStyled := cyan.Render(m.currentRegisterInput().View())
+		b.WriteString(inputStyled)
+		if validator != nil {
+			// 自定义校验
+		}
+	} else {
+		// 非当前字段：直接显示值 + 状态
+		if displayVal == "" {
+			b.WriteString(dim.Render("(empty)"))
+		} else {
+			b.WriteString(displayVal)
+		}
+	}
+
+	// 状态标记
+	if isCurrent {
+		// 当前字段：显示输入状态
+		if value == "" {
+			statusMark = dim.Render("")
+		} else if valid {
+			statusMark = green.Render("✅ ok")
+		} else {
+			statusMark = red.Render("⚠")
+		}
+	} else {
+		if value == "" {
+			if required {
+				statusMark = red.Render("⚠")
+			} else {
+				statusMark = "" // optional 空不算问题
+			}
+		} else if valid {
+			statusMark = green.Render("✅ ok")
+		} else {
+			statusMark = red.Render("⚠")
+		}
+	}
+
+	if statusMark != "" {
+		b.WriteString("  " + statusMark)
+	}
 
 	return b.String()
 }
@@ -743,49 +934,215 @@ func (m Model) headerBarCompact() string {
 	return b.String()
 }
 
+var (
+	usernameRe    = regexp.MustCompile(`^[a-zA-Z0-9-]{3,20}$`)
+	displayNameRe = regexp.MustCompile(`^[\p{L} \-]{2,30}$`) // letters (any lang), spaces, hyphens
+)
+
+func (m *Model) focusRegisterStep(step int) {
+	// 先全失焦
+	m.nameInput.Blur()
+	m.displayInput.Blur()
+	m.taglineInput.Blur()
+	m.registerStep = step
+	switch step {
+	case 0:
+		m.nameInput.Focus()
+	case 1:
+		m.displayInput.Focus()
+	case 2:
+		m.taglineInput.Focus()
+	// step 3: lang, 无焦点输入
+	}
+}
+
+func (m Model) currentRegisterInput() *textinput.Model {
+	switch m.registerStep {
+	case 0:
+		return &m.nameInput
+	case 1:
+		return &m.displayInput
+	case 2:
+		return &m.taglineInput
+	}
+	return nil
+}
+
 func (m Model) updateRegister(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ── 文本输入字段先让 textinput 处理（step 0/1/2） ──
 	var cmd tea.Cmd
-	m.nameInput, cmd = m.nameInput.Update(msg)
-	if msg.String() != "enter" {
-		return m, cmd
+	if m.registerStep < 3 {
+		inp := m.currentRegisterInput()
+		*inp, cmd = inp.Update(msg)
 	}
-	name := strings.TrimSpace(m.nameInput.Value())
 
-	// ── 支持在注册页直接输入 :redeem <token> 跳过注册 ──
-	if strings.HasPrefix(name, ":redeem ") || strings.HasPrefix(name, "/redeem ") ||
-		strings.HasPrefix(name, ":auth ") || strings.HasPrefix(name, "/auth ") {
-		tok := strings.TrimSpace(strings.SplitN(name, " ", 2)[1])
-		nm, ok := m.tryRedeem(tok)
-		if ok {
-			if nm.phase == PhaseWelcome {
-				return nm, tea.Tick(1800*time.Millisecond, func(t time.Time) tea.Msg {
-					return welcomeDoneMsg{}
-				})
+	switch msg.String() {
+
+	// ── :redeem / :auth — 任何步骤都可触发（读 nameInput 的值，因为用户可能在任何字段输入命令） ──
+	case "enter":
+		// 特殊：在 username 字段检测 redeem/skip 命令
+		if m.registerStep == 0 {
+			name := strings.TrimSpace(m.nameInput.Value())
+			if strings.HasPrefix(name, ":redeem ") || strings.HasPrefix(name, "/redeem ") ||
+				strings.HasPrefix(name, ":auth ") || strings.HasPrefix(name, "/auth ") {
+				tok := strings.TrimSpace(strings.SplitN(name, " ", 2)[1])
+				nm, ok := m.tryRedeem(tok)
+				if ok {
+					if nm.phase == PhaseWelcome {
+						return nm, tea.Tick(1800*time.Millisecond, func(t time.Time) tea.Msg {
+							return welcomeDoneMsg{}
+						})
+					}
+					return nm, nil
+				}
+				return nm, cmd
 			}
-			return nm, nil
+			if strings.HasPrefix(name, ":skip") {
+				// :skip — 用 username 直接提交，跳过可选字段
+				return m.submitRegister()
+			}
 		}
-		return nm, cmd
+
+		// Enter 导航逻辑
+		switch m.registerStep {
+		case 0: // username
+			if !usernameRe.MatchString(strings.TrimSpace(m.nameInput.Value())) {
+				m.inputErr = "Username: 3-20 chars · letters / numbers / hyphen only"
+				return m, cmd
+			}
+			exist, err := m.store.GetUserByUsername(strings.TrimSpace(m.nameInput.Value()))
+			if err != nil {
+				m.inputErr = "Check failed: " + err.Error()
+				return m, cmd
+			}
+			if exist != nil {
+				m.inputErr = "Username already taken"
+				return m, cmd
+			}
+			m.inputErr = ""
+			m.focusRegisterStep(1)
+			return m, textinput.Blink
+
+		case 1: // display name (optional) → 直接下一步
+			m.inputErr = ""
+			m.focusRegisterStep(2)
+			return m, textinput.Blink
+
+		case 2: // tagline (optional) → 下一步
+			m.inputErr = ""
+			m.focusRegisterStep(3)
+			return m, nil
+
+		case 3: // lang → 提交
+			return m.submitRegister()
+		}
+
+	// ── 导航 ──
+	case "tab", "down", "j":
+		m.inputErr = ""
+		m.focusRegisterStep((m.registerStep + 1) % 4)
+		if m.registerStep < 3 {
+			return m, textinput.Blink
+		}
+		return m, nil
+	case "shift+tab", "up", "k":
+		m.inputErr = ""
+		m.focusRegisterStep((m.registerStep + 3) % 4)
+		if m.registerStep < 3 {
+			return m, textinput.Blink
+		}
+		return m, nil
+
+	// ── Language 选择（step 3） ──
+	case "left", "h":
+		if m.registerStep == 3 {
+			m.langCursor = 0
+			m.inputErr = ""
+		}
+	case "right", "l":
+		if m.registerStep == 3 {
+			m.langCursor = 1
+			m.inputErr = ""
+		}
+	case "1":
+		if m.registerStep == 3 {
+			m.langCursor = 0
+		}
+	case "2":
+		if m.registerStep == 3 {
+			m.langCursor = 1
+		}
 	}
 
-	if !usernameRe.MatchString(name) {
-		m.inputErr = "用户名不合法：仅支持小写字母、数字、下划线，长度 2-20"
-		return m, cmd
+	// 也支持在 nameInput 里直接输入 :redeem / :skip 命令（不按 Enter 也能识别提示）
+	if m.registerStep == 0 {
+		v := strings.TrimSpace(m.nameInput.Value())
+		if v == ":skip" {
+			m.inputErr = "💡  Press Enter to submit with username only (skip optional fields)"
+		} else if strings.HasPrefix(v, ":redeem") || strings.HasPrefix(v, "/redeem") {
+			m.inputErr = "💡  Press Enter to redeem token"
+		} else {
+			// 实时 hint 清掉错误（如果输入有变化）
+			if m.inputErr != "" && !strings.HasPrefix(m.inputErr, "💡") {
+				// 保留用户之前的错误提示直到下一次 Enter 验证
+			}
+		}
 	}
-	exist, err := m.store.GetUserByUsername(name)
+
+	return m, cmd
+}
+
+// submitRegister 提交注册表单 — 所有必填字段验证后调 CreateUser
+func (m Model) submitRegister() (tea.Model, tea.Cmd) {
+	username := strings.TrimSpace(m.nameInput.Value())
+	displayName := strings.TrimSpace(m.displayInput.Value())
+	tagline := strings.TrimSpace(m.taglineInput.Value())
+
+	// 最终校验
+	if !usernameRe.MatchString(username) {
+		m.inputErr = "Username: 3-20 chars · letters / numbers / hyphen only"
+		m.focusRegisterStep(0)
+		return m, textinput.Blink
+	}
+	if displayName != "" && !displayNameRe.MatchString(displayName) {
+		m.inputErr = "Display name: 2-30 letters / spaces / hyphens (or leave empty)"
+		m.focusRegisterStep(1)
+		return m, textinput.Blink
+	}
+
+	exist, err := m.store.GetUserByUsername(username)
 	if err != nil {
-		m.inputErr = "校验失败：" + err.Error()
-		return m, cmd
+		m.inputErr = "DB error: " + err.Error()
+		return m, nil
 	}
 	if exist != nil {
-		m.inputErr = "该用户名已被占用"
-		return m, cmd
+		m.inputErr = "Username already taken"
+		m.focusRegisterStep(0)
+		return m, textinput.Blink
 	}
-	uid, err := m.store.CreateUser(name, m.fp)
+
+	// lang
+	lang := "en"
+	if m.langCursor == 0 {
+		lang = "zh"
+	}
+
+	uid, err := m.store.CreateUser(username, m.fp, displayName, tagline, lang)
 	if err != nil {
-		m.inputErr = "注册失败：" + err.Error()
-		return m, cmd
+		m.inputErr = "Register failed: " + err.Error()
+		return m, nil
 	}
-	m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusPending}
+
+	m.user = &store.User{
+		ID:          uid,
+		Username:    username,
+		DisplayName: displayName,
+		Tagline:     tagline,
+		Lang:        lang,
+		PubKeyFingerprint: m.fp,
+		Status:      store.StatusPending,
+	}
+	m.inputErr = ""
 	m.startQuiz()
 	return m, nil
 }
@@ -851,7 +1208,7 @@ func (m Model) tryRedeem(token string) (Model, bool) {
 				name = fmt.Sprintf("user_%s_%d", m.fp[:8], i)
 			}
 		}
-		uid, err := m.store.CreateUser(name, m.fp)
+		uid, err := m.store.CreateUser(name, m.fp, "", "", "en")
 		if err != nil {
 			msg := "注册失败：" + err.Error()
 			if m.phase == PhaseRegister {
@@ -859,7 +1216,7 @@ func (m Model) tryRedeem(token string) (Model, bool) {
 			}
 			return m, false
 		}
-		m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusPending}
+		m.user = &store.User{ID: uid, Username: name, PubKeyFingerprint: m.fp, Status: store.StatusPending, Lang: "en"}
 	}
 	if m.user.Status != store.StatusApproved {
 		_, _ = m.store.DB().Exec("UPDATE users SET status = ? WHERE id = ?", store.StatusApproved, m.user.ID)
@@ -1265,12 +1622,27 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		} else if m.retrySel == 1 {
 			// 退回注册页（支持 :redeem token）
-			ti := textinput.New()
-			ti.Placeholder = "输入 :redeem <token> 或新用户名"
-			ti.CharLimit = 120
-			ti.Prompt = "> "
-			ti.Focus()
-			m.nameInput = ti
+			ti1 := textinput.New()
+			ti1.Placeholder = "3-20 chars · letters / numbers / hyphen"
+			ti1.CharLimit = 120
+			ti1.Prompt = "> "
+			ti1.Focus()
+			m.nameInput = ti1
+
+			ti2 := textinput.New()
+			ti2.Placeholder = "How should we call you?"
+			ti2.CharLimit = 30
+			ti2.Prompt = "> "
+			m.displayInput = ti2
+
+			ti3 := textinput.New()
+			ti3.Placeholder = "One line about you / your project"
+			ti3.CharLimit = 80
+			ti3.Prompt = "> "
+			m.taglineInput = ti3
+
+			m.langCursor = 1
+			m.registerStep = 0
 			m.inputErr = ""
 			m.phase = PhaseRegister
 			return m, nil

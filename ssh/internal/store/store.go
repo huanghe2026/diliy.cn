@@ -28,6 +28,9 @@ const (
 type User struct {
 	ID                int64
 	Username          string
+	DisplayName       string
+	Tagline           string
+	Lang              string
 	PubKeyFingerprint string
 	Status            string
 	CreatedAt         string
@@ -76,6 +79,15 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+	// 迁移：新增 display_name / tagline / lang 字段（兼容已有 DB）
+	for _, m := range []string{
+		"ALTER TABLE users ADD COLUMN display_name TEXT",
+		"ALTER TABLE users ADD COLUMN tagline TEXT",
+		"ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'en'",
+	} {
+		// SQLite 没有 IF NOT EXISTS，用错误忽略方式
+		_, _ = db.Exec(m)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -83,6 +95,9 @@ const schemaSQL = `
 CREATE TABLE IF NOT EXISTS users (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	username TEXT NOT NULL UNIQUE,
+	display_name TEXT,
+	tagline TEXT,
+	lang TEXT DEFAULT 'en',
 	pubkey_fingerprint TEXT NOT NULL UNIQUE,
 	status TEXT NOT NULL DEFAULT 'pending',
 	created_at TEXT NOT NULL
@@ -123,9 +138,9 @@ func (s *Store) DB() *sql.DB { return s.db }
 func (s *Store) GetUserByFingerprint(fp string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, username, pubkey_fingerprint, status, created_at FROM users WHERE pubkey_fingerprint = ?`,
+		`SELECT id, username, COALESCE(display_name,''), COALESCE(tagline,''), COALESCE(lang,'en'), pubkey_fingerprint, status, created_at FROM users WHERE pubkey_fingerprint = ?`,
 		fp,
-	).Scan(&u.ID, &u.Username, &u.PubKeyFingerprint, &u.Status, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Tagline, &u.Lang, &u.PubKeyFingerprint, &u.Status, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -139,9 +154,9 @@ func (s *Store) GetUserByFingerprint(fp string) (*User, error) {
 func (s *Store) GetUserByUsername(name string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, username, pubkey_fingerprint, status, created_at FROM users WHERE username = ?`,
+		`SELECT id, username, COALESCE(display_name,''), COALESCE(tagline,''), COALESCE(lang,'en'), pubkey_fingerprint, status, created_at FROM users WHERE username = ?`,
 		name,
-	).Scan(&u.ID, &u.Username, &u.PubKeyFingerprint, &u.Status, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Tagline, &u.Lang, &u.PubKeyFingerprint, &u.Status, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -152,11 +167,14 @@ func (s *Store) GetUserByUsername(name string) (*User, error) {
 }
 
 // CreateUser 新建用户（pending 状态），返回 user id
-func (s *Store) CreateUser(username, fingerprint string) (int64, error) {
+func (s *Store) CreateUser(username, fingerprint, displayName, tagline, lang string) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	if lang == "" {
+		lang = "en"
+	}
 	res, err := s.db.Exec(
-		`INSERT INTO users (username, pubkey_fingerprint, status, created_at) VALUES (?, ?, ?, ?)`,
-		username, fingerprint, StatusPending, now,
+		`INSERT INTO users (username, display_name, tagline, lang, pubkey_fingerprint, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		username, displayName, tagline, lang, fingerprint, StatusPending, now,
 	)
 	if err != nil {
 		return 0, err
