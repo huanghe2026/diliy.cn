@@ -541,38 +541,34 @@ func (m Model) breadcrumb() string {
 	return "  Home"
 }
 
-// bottomBar 全局底部状态条（phase 徽章 + 钱包 + 链上 + 键位）
-func (m Model) bottomBar() string {
-	dim := lipgloss.NewStyle().Foreground(cMuted)
+// statusLine claude code / qodercli 风格单行状态条
+// 紧凑 dim 色 · phase · wallet · chain · keys 五段
+func (m Model) statusLine() string {
+	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
 	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
 
-	phaseName := phaseBadge(m.phase)
+	phase := phaseBadge(m.phase)
 
-	// 用户钱包地址（如果有 userID）
-	walletStr := ""
+	wallet := ""
 	if m.user != nil {
 		addr := m.userWalletAddr()
 		if addr != "" && len(addr) > 10 {
-			walletStr = cyan.Render(addr[:6]+"..."+addr[len(addr)-4:])
+			wallet = cyan.Render("🔑 " + addr[:6] + "…" + addr[len(addr)-4:])
 		}
 	}
+	chain := green.Render("✅ Amoy")
+	keys := dim.Render("↑↓ Nav · Enter Select · ? Help · Esc Back")
 
-	// 链上状态（简化：直接显示 "Polygon Amoy ✅" 静态）
-	chainBadge := green.Render("✅ Polygon Amoy")
-
-	var b strings.Builder
-	b.WriteString("\n")
-	// 第一行：phase + wallet + chain
-	b.WriteString(dim.Render("  ◆ ") + phaseName + "  ")
-	if walletStr != "" {
-		b.WriteString(dim.Render("🔑 ") + walletStr + "  ")
+	sep := dim.Render("·")
+	parts := []string{gold.Render("◆"), phase}
+	if wallet != "" {
+		parts = append(parts, wallet)
 	}
-	b.WriteString(chainBadge)
-	b.WriteString("\n")
-	// 第二行：全局键位
-	b.WriteString(dim.Render("  ↑↓←→ Nav · Enter/Num Select · ? Help · Esc Back · Ctrl+C Force Quit"))
-	return b.String()
+	parts = append(parts, chain, keys)
+
+	return "\n" + strings.Join(parts, " "+sep+" ") + "\n"
 }
 
 // phaseBadge 把 Phase 转成简短徽章文本
@@ -952,9 +948,10 @@ func (m Model) viewQuiz() string {
 
 	b.WriteString(m.headerBar(fmt.Sprintf("·  AI RECRUITMENT QUIZ  ·  %d / %d", m.cursor+1, total)))
 
+	var content strings.Builder
 	// 📊 霓虹进度条
-	b.WriteString(renderFancyProgress(m.cursor+1, total))
-	b.WriteString("\n\n")
+	content.WriteString(renderFancyProgress(m.cursor+1, total))
+	content.WriteString("\n\n")
 
 	// ❓ 题目卡片
 	card := fmt.Sprintf("%s\n\n", styleQuestion.Render(fmt.Sprintf("❓  Q%d.  %s", m.cursor+1, q.Q)))
@@ -971,9 +968,18 @@ func (m Model) viewQuiz() string {
 		card += line + "\n"
 	}
 
-	b.WriteString(styleCard.Render(card))
-	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  ↑↓/jk to navigate  ·  1-4 to select & advance  ·  ⏎ to confirm  ·  Ctrl+C to exit"))
+	content.WriteString(styleCard.Render(card))
+	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  ↑↓/jk to navigate  ·  1-4 to select & advance  ·  ⏎ to confirm  ·  Ctrl+C to exit"))
+
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1055,40 +1061,42 @@ func (m Model) viewResult() string {
 
 	b.WriteString(m.headerBar("·  RECRUITMENT RESULT  ·"))
 
+	var content strings.Builder
+
 	if m.passed {
 		// ── PASS: 霓虹恭喜画面 ──
-		b.WriteString(RenderCongratsPass(m.score, total))
-		b.WriteString("\n")
-		b.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
-		b.WriteString("\n\n")
+		content.WriteString(RenderCongratsPass(m.score, total))
+		content.WriteString("\n")
+		content.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
+		content.WriteString("\n\n")
 
-		b.WriteString(styleSuccessText.Render(
+		content.WriteString(styleSuccessText.Render(
 			"  ✓  Welcome aboard, " + m.user.Username + "!\n" +
 				"  ✓  Private chat room unlocked\n" +
 				"  ✓  All members are waiting for you",
 		))
-		b.WriteString("\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter to open main menu  ·  q/esc to exit"))
+		content.WriteString("\n\n")
+		content.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter to open main menu  ·  q/esc to exit"))
 	} else {
 		// ── FAIL: 霓虹未通过画面 ──
-		b.WriteString(RenderTryAgainFail(m.score, total))
-		b.WriteString("\n")
-		b.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
-		b.WriteString("\n\n")
+		content.WriteString(RenderTryAgainFail(m.score, total))
+		content.WriteString("\n")
+		content.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
+		content.WriteString("\n\n")
 
-		b.WriteString(styleDangerText.Render(
+		content.WriteString(styleDangerText.Render(
 			fmt.Sprintf("  ✗  Not yet — need ≥ %d / %d to pass", PassThreshold, total)))
-		b.WriteString("\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  Reconnect via ssh diliy.cn to try again  ·  ⏎/q to exit"))
+		content.WriteString("\n\n")
+		content.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  Reconnect via ssh diliy.cn to try again  ·  ⏎/q to exit"))
 	}
 
 	// 答题回顾（前 8 题）
-	b.WriteString("\n\n")
+	content.WriteString("\n\n")
 	reviewHeader := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render(
 		"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  QUIZ REVIEW (first 8)  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n",
 	)
-	b.WriteString(reviewHeader)
-	b.WriteString("\n")
+	content.WriteString(reviewHeader)
+	content.WriteString("\n")
 	limit := 8
 	if len(m.questions) < limit {
 		limit = len(m.questions)
@@ -1101,18 +1109,26 @@ func (m Model) viewResult() string {
 		if ok {
 			mark = styleMarkOK.Render("  ✓")
 		}
-		b.WriteString(fmt.Sprintf("%s  %d. %s\n", mark, i+1, q.Q))
+		content.WriteString(fmt.Sprintf("%s  %d. %s\n", mark, i+1, q.Q))
 		if !ok {
-			b.WriteString(styleExplain.Render(fmt.Sprintf(
+			content.WriteString(styleExplain.Render(fmt.Sprintf(
 				"  Your answer: %s   Correct: %s   💡 %s",
 				letter(ans), letter(q.Answer), q.Explain)) + "\n")
 		}
-		b.WriteString("\n")
+		content.WriteString("\n")
 	}
 	if len(m.questions) > limit {
-		b.WriteString(styleHint.Render(fmt.Sprintf("  ... and %d more questions omitted", len(m.questions)-limit)))
+		content.WriteString(styleHint.Render(fmt.Sprintf("  ... and %d more questions omitted", len(m.questions)-limit)))
 	}
 
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1190,8 +1206,10 @@ func (m Model) viewWelcome() string {
 	var b strings.Builder
 	b.WriteString(m.headerBar("·  WELCOME BACK  ·"))
 
+	var content strings.Builder
+
 	// 🌈 小彩虹 logo
-	b.WriteString(RenderRainbowLogo() + "\n")
+	content.WriteString(RenderRainbowLogo() + "\n")
 
 	n, _ := m.store.CountApproved()
 	totalAttempts, _ := m.store.CountAttemptsForUser(m.user.ID)
@@ -1209,17 +1227,25 @@ func (m Model) viewWelcome() string {
 		n,
 		totalAttempts,
 	)
-	b.WriteString(styleCardSuccess.Render(userCard))
+	content.WriteString(styleCardSuccess.Render(userCard))
 
 	// ✨ 手动导航提示（不再自动 skip）
-	b.WriteString("\n  " + lipgloss.NewStyle().
+	content.WriteString("\n  " + lipgloss.NewStyle().
 		Foreground(cNeonCyan).
 		Bold(true).
 		Render("✓  验证通过！按 Enter 进入主菜单"))
 
 	// 底部 hint
-	b.WriteString(hintBar("⏎ Enter → Main Menu", "q / Esc → Exit"))
+	content.WriteString(hintBar("⏎ Enter → Main Menu", "q / Esc → Exit"))
 
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1264,12 +1290,13 @@ func (m Model) viewRetry() string {
 	var b strings.Builder
 	b.WriteString(m.headerBar("· 再次挑战 ·"))
 
-	b.WriteString(styleCardDanger.Render(fmt.Sprintf(
+	var content strings.Builder
+	content.WriteString(styleCardDanger.Render(fmt.Sprintf(
 		"  ⚠  %s，你尚未通过准入测试\n\n  当前状态: pending（未通过）",
 		m.user.Username,
 	)))
 
-	b.WriteString("\n  你可以：\n\n")
+	content.WriteString("\n  你可以：\n\n")
 
 	labels := []string{
 		"    🎯  重新挑战 AI 题目",
@@ -1281,10 +1308,19 @@ func (m Model) viewRetry() string {
 		if i == m.retrySel {
 			marker = styleCursor.Render("> ")
 		}
-		b.WriteString(marker + l + "\n")
+		content.WriteString(marker + l + "\n")
 	}
 
-	b.WriteString("\n" + styleHint.Render("↑↓ 选择 · 回车确认"))
+	content.WriteString("\n" + styleHint.Render("↑↓ 选择 · 回车确认"))
+
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1390,29 +1426,39 @@ func (m Model) viewChat() string {
 	// Header
 	b.WriteString(m.headerBar(fmt.Sprintf("· 💬 私密聊天室  |  在线 %d ·", count)))
 
+	var content strings.Builder
+
 	// 聊天记录
 	start := 0
 	if len(m.chatLog) > 80 {
 		start = len(m.chatLog) - 80
 	}
 	for _, msg := range m.chatLog[start:] {
-		b.WriteString(renderChatMessage(msg, m.user))
-		b.WriteString("\n")
+		content.WriteString(renderChatMessage(msg, m.user))
+		content.WriteString("\n")
 	}
 	if start > 0 {
-		b.WriteString(styleHint.Render(fmt.Sprintf("... (省略 %d 条历史)", start)) + "\n")
+		content.WriteString(styleHint.Render(fmt.Sprintf("... (省略 %d 条历史)", start)) + "\n")
 	}
 
 	// 输入框
-	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().
+	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorAccent).
 		Padding(0, 1).
 		Render(m.chatInput.View()))
 
-	b.WriteString("\n" + styleHint.Render("Enter 发送 · /w 私聊 · :help 命令 · :quit 退出 · Ctrl+C 断开"))
+	content.WriteString("\n" + styleHint.Render("Enter 发送 · /w 私聊 · :help 命令 · :quit 退出 · Ctrl+C 断开"))
 
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1532,7 +1578,7 @@ func (m Model) viewMenu() string {
 	}
 
 	// 底部键位 hint
-	b.WriteString(m.bottomBar())
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1783,91 +1829,95 @@ func (m Model) viewMyCards() string {
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 
-	if m.myCardsLoading {
-		b.WriteString("  " + m.spinner() + "  Loading your cards from Polygon Amoy...\n")
-		b.WriteString(dim.Render("  (this may take 10-30 seconds)\n"))
-		return b.String()
-	}
-	if m.myCardsErr != nil {
-		b.WriteString(red.Render(fmt.Sprintf("  ✗ Failed to load cards: %v", m.myCardsErr)) + "\n\n")
-		b.WriteString(dim.Render("  Press R to retry · Esc to return\n"))
-		return b.String()
-	}
+	var content strings.Builder
 
-	if !m.showNeighbors {
+	if m.myCardsLoading {
+		content.WriteString("  " + m.spinner() + "  Loading your cards from Polygon Amoy...\n")
+		content.WriteString(dim.Render("  (this may take 10-30 seconds)\n"))
+	} else if m.myCardsErr != nil {
+		content.WriteString(red.Render(fmt.Sprintf("  ✗ Failed to load cards: %v", m.myCardsErr)) + "\n\n")
+		content.WriteString(dim.Render("  Press R to retry · Esc to return\n"))
+	} else if !m.showNeighbors {
 		// 我的卡片列表
-		b.WriteString(neon.Render("  🃏 Your Geoyuan Cards") + "\n")
+		content.WriteString(neon.Render("  🃏 Your Geoyuan Cards") + "\n")
 		if m.chainReady() {
-			b.WriteString(green.Render("  ✓ Connected to Polygon Amoy") + "\n")
+			content.WriteString(green.Render("  ✓ Connected to Polygon Amoy") + "\n")
 		} else {
-			b.WriteString(dim.Render("  (chain not ready — showing cache only)") + "\n")
+			content.WriteString(dim.Render("  (chain not ready — showing cache only)") + "\n")
 		}
 		if wa := m.userWalletAddr(); wa != "" {
-			b.WriteString(dim.Render("  👛 Wallet: "+wa) + "\n")
+			content.WriteString(dim.Render("  👛 Wallet: "+wa) + "\n")
 		}
-		b.WriteString("\n")
+		content.WriteString("\n")
 
 		if len(m.myCardsCache) == 0 {
-			b.WriteString(dim.Render("  📭 You don't own any cards yet.\n"))
-			b.WriteString("  Mint your first card from the Main Menu → 🎴 Mint.\n\n")
+			content.WriteString(dim.Render("  📭 You don't own any cards yet.\n"))
+			content.WriteString("  Mint your first card from the Main Menu → 🎴 Mint.\n\n")
 		} else {
 			for _, c := range m.myCardsCache {
-				b.WriteString(fmt.Sprintf("  🎴 Token #%s\n", c.TokenID))
+				content.WriteString(fmt.Sprintf("  🎴 Token #%s\n", c.TokenID))
 				if c.Title != "" {
-					b.WriteString(fmt.Sprintf("     Title:   %s\n", c.Title))
+					content.WriteString(fmt.Sprintf("     Title:   %s\n", c.Title))
 				}
 				if c.Desc != "" {
-					b.WriteString(fmt.Sprintf("     Desc:    %s\n", truncateLine(c.Desc, 60)))
+					content.WriteString(fmt.Sprintf("     Desc:    %s\n", truncateLine(c.Desc, 60)))
 				}
 				if c.Color != "" {
-					b.WriteString(fmt.Sprintf("     Color:   %s ", c.Color))
-					b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(strings.TrimPrefix(c.Color, "#"))).Render("■"))
-					b.WriteString("\n")
+					content.WriteString(fmt.Sprintf("     Color:   %s ", c.Color))
+					content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(strings.TrimPrefix(c.Color, "#"))).Render("■"))
+					content.WriteString("\n")
 				}
 				if c.H3Index != 0 {
-					b.WriteString(fmt.Sprintf("     H3:      0x%x (res=%d)\n", c.H3Index, c.Res))
-					b.WriteString(fmt.Sprintf("     Lat/Lon: %.4f, %.4f\n", c.Lat, c.Lon))
+					content.WriteString(fmt.Sprintf("     H3:      0x%x (res=%d)\n", c.H3Index, c.Res))
+					content.WriteString(fmt.Sprintf("     Lat/Lon: %.4f, %.4f\n", c.Lat, c.Lon))
 				}
-				b.WriteString("\n")
+				content.WriteString("\n")
 			}
 		}
 
 		// 邻居匹配入口（基于第一张卡的 H3 cell）
 		if len(m.myCardsCache) > 0 && m.myCardsCache[0].H3Index != 0 {
 			first := m.myCardsCache[0]
-			b.WriteString(dim.Render("  ─────────────────────────────────────\n"))
-			b.WriteString("  Press " + cyan.Render("M") + " to find neighbor matches around your first card\n")
-			b.WriteString(fmt.Sprintf("    Center cell: 0x%x (k=%d)\n", first.H3Index, m.neighborK))
+			content.WriteString(dim.Render("  ─────────────────────────────────────\n"))
+			content.WriteString("  Press " + cyan.Render("M") + " to find neighbor matches around your first card\n")
+			content.WriteString(fmt.Sprintf("    Center cell: 0x%x (k=%d)\n", first.H3Index, m.neighborK))
 		}
-		b.WriteString(hintBar("R reload · M find neighbors · L list this card · Esc/← Back · q quit"))
+		content.WriteString(hintBar("R reload · M find neighbors · L list this card · Esc/← Back · q quit"))
 	} else {
 		// 邻居匹配结果
-		b.WriteString(neon.Render(fmt.Sprintf("  🧭 Neighbor Match — k=%d around 0x%x", m.neighborK, m.neighborH3)) + "\n\n")
+		content.WriteString(neon.Render(fmt.Sprintf("  🧭 Neighbor Match — k=%d around 0x%x", m.neighborK, m.neighborH3)) + "\n\n")
 		if m.neighborLoading {
-			b.WriteString("  " + m.spinner() + "  Loading neighbor matches...\n")
-			return b.String()
-		}
-		if m.neighborErr != nil {
-			b.WriteString(red.Render(fmt.Sprintf("  ✗ Neighbor query failed: %v", m.neighborErr)) + "\n\n")
+			content.WriteString("  " + m.spinner() + "  Loading neighbor matches...\n")
+		} else if m.neighborErr != nil {
+			content.WriteString(red.Render(fmt.Sprintf("  ✗ Neighbor query failed: %v", m.neighborErr)) + "\n\n")
 		} else if len(m.neighborCache) == 0 {
-			b.WriteString(dim.Render("  🗺️  No matching cards found in this area yet.\n"))
-			b.WriteString("  More travelers minting nearby cards over time → matches will appear.\n\n")
+			content.WriteString(dim.Render("  🗺️  No matching cards found in this area yet.\n"))
+			content.WriteString("  More travelers minting nearby cards over time → matches will appear.\n\n")
 		} else {
-			b.WriteString(green.Render(fmt.Sprintf("  Found %d neighbor card(s):\n\n", len(m.neighborCache))))
+			content.WriteString(green.Render(fmt.Sprintf("  Found %d neighbor card(s):\n\n", len(m.neighborCache))))
 			for _, c := range m.neighborCache {
 				title := c.Title
 				if title == "" {
 					title = "(no title)"
 				}
-				b.WriteString(fmt.Sprintf("  🧩 #%s  %s\n", c.TokenID, title))
+				content.WriteString(fmt.Sprintf("  🧩 #%s  %s\n", c.TokenID, title))
 				if c.H3Index != 0 {
-					b.WriteString(fmt.Sprintf("     cell: 0x%x  lat=%.4f lon=%.4f  res=%d\n", c.H3Index, c.Lat, c.Lon, c.Res))
+					content.WriteString(fmt.Sprintf("     cell: 0x%x  lat=%.4f lon=%.4f  res=%d\n", c.H3Index, c.Lat, c.Lon, c.Res))
 				}
 			}
-			b.WriteString("\n")
+			content.WriteString("\n")
 		}
-		b.WriteString(hintBar("Esc/← Back to My Cards · q quit"))
+		content.WriteString(hintBar("Esc/← Back to My Cards · q quit"))
 	}
+
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -1956,47 +2006,55 @@ func (m Model) viewMarket() string {
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 
+	var content strings.Builder
+
 	if m.marketLoading {
-		b.WriteString("  " + m.spinner() + "  Loading Geoyuan Marketplace...\n")
-		return b.String()
-	}
-	if m.marketErr != "" {
-		b.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.marketErr)) + "\n\n")
-		b.WriteString(dim.Render("  R retry · Esc back\n"))
-		return b.String()
-	}
-
-	b.WriteString(neon.Render(fmt.Sprintf("  🛒 Geoyuan Marketplace   (%d listing(s) total)", m.marketCount)) + "\n\n")
-
-	if len(m.marketListings) == 0 {
-		b.WriteString(dim.Render("  📭 No cards listed yet.\n"))
-		b.WriteString("  Be the first — go to My Cards, select a card, press L to list.\n\n")
+		content.WriteString("  " + m.spinner() + "  Loading Geoyuan Marketplace...\n")
+	} else if m.marketErr != "" {
+		content.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.marketErr)) + "\n\n")
+		content.WriteString(dim.Render("  R retry · Esc back\n"))
 	} else {
-		for i, l := range m.marketListings {
-			prefix := "  "
-			if i == m.marketListingSel {
-				prefix = m.cursorMarker()
+		content.WriteString(neon.Render(fmt.Sprintf("  🛒 Geoyuan Marketplace   (%d listing(s) total)", m.marketCount)) + "\n\n")
+
+		if len(m.marketListings) == 0 {
+			content.WriteString(dim.Render("  📭 No cards listed yet.\n"))
+			content.WriteString("  Be the first — go to My Cards, select a card, press L to list.\n\n")
+		} else {
+			for i, l := range m.marketListings {
+				prefix := "  "
+				if i == m.marketListingSel {
+					prefix = m.cursorMarker()
+				}
+				content.WriteString(prefix)
+				content.WriteString(fmt.Sprintf("#%s  %s", l.TokenID, l.Title))
+				content.WriteString("   ")
+				content.WriteString(green.Render(fmt.Sprintf("◎ %s MATIC", l.PriceMATIC)))
+				content.WriteString("\n")
+				content.WriteString("    ")
+				content.WriteString(dim.Render(fmt.Sprintf("Seller: %s  ·  cell: 0x%x  ·  %.4f,%.4f",
+					shortAddr(l.Seller), l.H3Index, l.Lat, l.Lon)))
+				content.WriteString("\n\n")
 			}
-			b.WriteString(prefix)
-			b.WriteString(fmt.Sprintf("#%s  %s", l.TokenID, l.Title))
-			b.WriteString("   ")
-			b.WriteString(green.Render(fmt.Sprintf("◎ %s MATIC", l.PriceMATIC)))
-			b.WriteString("\n")
-			b.WriteString("    ")
-			b.WriteString(dim.Render(fmt.Sprintf("Seller: %s  ·  cell: 0x%x  ·  %.4f,%.4f",
-				shortAddr(l.Seller), l.H3Index, l.Lat, l.Lon)))
-			b.WriteString("\n\n")
 		}
+
+		// 分页
+		if m.marketCount > marketPageSize {
+			page := m.marketOffset / marketPageSize
+			totalPages := (m.marketCount + marketPageSize - 1) / marketPageSize
+			content.WriteString(dim.Render(fmt.Sprintf("  Page %d/%d", page+1, totalPages)) + "\n")
+		}
+
+		content.WriteString(hintBar("↑↓/jk select · Enter or B buy · N next page · P prev page · R reload · Esc back"))
 	}
 
-	// 分页
-	if m.marketCount > marketPageSize {
-		page := m.marketOffset / marketPageSize
-		totalPages := (m.marketCount + marketPageSize - 1) / marketPageSize
-		b.WriteString(dim.Render(fmt.Sprintf("  Page %d/%d", page+1, totalPages)) + "\n")
-	}
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
 
-	b.WriteString(hintBar("↑↓/jk select · Enter or B buy · N next page · P prev page · R reload · Esc back"))
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -2070,51 +2128,55 @@ func (m Model) viewListCard() string {
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 
+	var content strings.Builder
+
 	if m.listCardLoading {
-		b.WriteString("  " + m.spinner() + "  Submitting listing to Polygon Amoy...\n")
-		b.WriteString(dim.Render("  (waiting for receipt, 10-60s)") + "\n")
-		b.WriteString(hintBar("waiting..."))
-		return b.String()
-	}
-
-	if m.listCardDone {
-		b.WriteString(green.Render("  ✓ Listing successful!") + "\n\n")
-		b.WriteString(dim.Render("  Your card is now on the marketplace."))
-		b.WriteString(hintBar("Esc or Enter → Back to My Cards"))
-		return b.String()
-	}
-
-	// 选卡列表
-	b.WriteString(neon.Render("  🃏 Pick a card to list") + "\n\n")
-	if len(m.myCardsCache) == 0 {
-		b.WriteString(red.Render("  ✗ No cards to list. Go mint first.\n"))
-		b.WriteString(hintBar("Esc → Back to My Cards"))
-		return b.String()
+		content.WriteString("  " + m.spinner() + "  Submitting listing to Polygon Amoy...\n")
+		content.WriteString(dim.Render("  (waiting for receipt, 10-60s)") + "\n")
+		content.WriteString(hintBar("waiting..."))
+	} else if m.listCardDone {
+		content.WriteString(green.Render("  ✓ Listing successful!") + "\n\n")
+		content.WriteString(dim.Render("  Your card is now on the marketplace."))
+		content.WriteString(hintBar("Esc or Enter → Back to My Cards"))
 	} else {
-		for i, c := range m.myCardsCache {
-			prefix := "  "
-			if i == m.listCardCursor {
-				prefix = m.cursorMarker()
+		// 选卡列表
+		content.WriteString(neon.Render("  🃏 Pick a card to list") + "\n\n")
+		if len(m.myCardsCache) == 0 {
+			content.WriteString(red.Render("  ✗ No cards to list. Go mint first.\n"))
+			content.WriteString(hintBar("Esc → Back to My Cards"))
+		} else {
+			for i, c := range m.myCardsCache {
+				prefix := "  "
+				if i == m.listCardCursor {
+					prefix = m.cursorMarker()
+				}
+				content.WriteString(prefix)
+				content.WriteString(fmt.Sprintf("#%s  %s", c.TokenID, c.Title))
+				content.WriteString("\n")
+				content.WriteString(dim.Render(fmt.Sprintf("    cell: 0x%x  ·  %.4f,%.4f", c.H3Index, c.Lat, c.Lon)))
+				content.WriteString("\n\n")
 			}
-			b.WriteString(prefix)
-			b.WriteString(fmt.Sprintf("#%s  %s", c.TokenID, c.Title))
-			b.WriteString("\n")
-			b.WriteString(dim.Render(fmt.Sprintf("    cell: 0x%x  ·  %.4f,%.4f", c.H3Index, c.Lat, c.Lon)))
-			b.WriteString("\n\n")
+
+			// 价格输入
+			content.WriteString(cyan.Render("  💰 Set price (MATIC):") + "\n\n")
+			content.WriteString("  " + m.listInput.View() + "\n")
 		}
+
+		if m.listCardErr != "" {
+			content.WriteString("\n\n  " + red.Render(m.listCardErr))
+		}
+
+		content.WriteString(hintBar("↑↓ pick card · Enter confirm · Esc cancel"))
 	}
 
-	// 价格输入
-	if len(m.myCardsCache) > 0 {
-		b.WriteString(cyan.Render("  💰 Set price (MATIC):") + "\n\n")
-		b.WriteString("  " + m.listInput.View() + "\n")
-	}
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(72).
+		Render(content.String()))
 
-	if m.listCardErr != "" {
-		b.WriteString("\n\n  " + red.Render(m.listCardErr))
-	}
-
-	b.WriteString(hintBar("↑↓ pick card · Enter confirm · Esc cancel"))
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
