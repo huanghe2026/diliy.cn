@@ -1760,9 +1760,7 @@ func (m Model) updateMarket(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.marketListings) == 0 {
 			return m, nil
 		}
-		if msg.String() != "b" && msg.String() != "B" {
-			return m, nil
-		}
+		// B / Enter 都可以购买（enter 在 marketplace 视图里没有其他含义）
 		// 买选中的 listing
 		if !m.chainReady() {
 			m.marketErr = "链上钱包未就绪，无法购买"
