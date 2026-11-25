@@ -24,9 +24,6 @@ var geoyuanLogoFallback string
 //go:embed assets/geoyuan_splash.txt
 var geoyuanSplash string
 
-//go:embed assets/geoyuan_logo.png
-var geoyuanLogoPNG []byte
-
 // LogoTier 三层 fallback 优先级
 type LogoTier int
 
