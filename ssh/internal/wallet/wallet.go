@@ -124,6 +124,45 @@ func (m *Manager) Mint(userID int64, p card.MintParams) (*card.MintResult, error
 	return m.svc.MintAs(key, p)
 }
 
+// List — 把 userID 钱包的卡挂到市场（自动补 gas）
+func (m *Manager) List(userID int64, tokenID *big.Int, priceWei *big.Int) (txHash string, block uint64, err error) {
+	if m == nil || m.svc == nil {
+		return "", 0, fmt.Errorf("card service unavailable")
+	}
+	key, err := m.keyFor(userID)
+	if err != nil {
+		return "", 0, err
+	}
+	if key == nil {
+		return "", 0, fmt.Errorf("user wallet not configured")
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	if err := m.ensureGas(addr); err != nil {
+		return "", 0, fmt.Errorf("gas top-up: %w", err)
+	}
+	return m.svc.List(key, tokenID, priceWei)
+}
+
+// Buy — 用 userID 钱包买下一张挂售卡（自动补 gas + 自动带 MATIC）
+func (m *Manager) Buy(userID int64, tokenID *big.Int, valueWei *big.Int) (txHash string, block uint64, err error) {
+	if m == nil || m.svc == nil {
+		return "", 0, fmt.Errorf("card service unavailable")
+	}
+	key, err := m.keyFor(userID)
+	if err != nil {
+		return "", 0, err
+	}
+	if key == nil {
+		return "", 0, fmt.Errorf("user wallet not configured")
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	// 买需要 gas + 卡的价格本身
+	if err := m.ensureGas(addr); err != nil {
+		return "", 0, fmt.Errorf("gas top-up: %w", err)
+	}
+	return m.svc.Buy(key, tokenID, valueWei)
+}
+
 // ─── gas ────────────────────────────────────────────
 
 func (m *Manager) ensureGas(addr common.Address) error {

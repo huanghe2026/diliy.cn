@@ -11,7 +11,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +46,8 @@ const (
 	PhaseMenu     // 主菜单（Welcome 后进入）
 	PhaseMintCard // Mint GeoyuanCard 视图
 	PhaseMyCards  // 我的卡片列表
+	PhaseMarket   // 全市场挂售浏览
+	PhaseListCard // 把自己的卡挂售
 )
 
 // ═══════════════════════════════════════════════
@@ -117,6 +121,23 @@ type Model struct {
 	neighborK       int
 	neighborH3      uint64
 	showNeighbors   bool
+
+	// 市场
+	marketListings  []card.MarketListing
+	marketErr       string
+	marketLoading   bool
+	marketListingSel int // 市场列表当前选中的 listing
+	marketOffset    uint64
+	marketCount     uint64
+
+	// 挂售
+	listCardCursor int // My Cards 里选卡挂售的 cursor
+	listPriceWei   string // 用户输入的挂售价（wei 或 MATIC）
+	listInputFocus bool
+	listInput      textinput.Model
+	listCardLoading bool
+	listCardErr    string
+	listCardDone   bool
 
 	// 状态
 	Done   bool
@@ -196,6 +217,23 @@ type (
 		cards []card.Card
 		err   error
 	}
+	marketLoadedMsg struct {
+		listings []card.MarketListing
+		count    uint64
+		err      error
+	}
+	listCardDoneMsg struct {
+		txHash string
+		err    error
+	}
+	unlistDoneMsg struct {
+		txHash string
+		err    error
+	}
+	buyDoneMsg struct {
+		txHash string
+		err    error
+	}
 )
 
 func receiveMsgs(sub *chat.Subscription) tea.Cmd {
@@ -251,6 +289,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.neighborErr = msg.err
 		m.neighborLoading = false
 		return m, nil
+	case marketLoadedMsg:
+		m.marketListings = msg.listings
+		m.marketCount = msg.count
+		if msg.err != nil {
+			m.marketErr = msg.err.Error()
+		} else {
+			m.marketErr = ""
+		}
+		m.marketLoading = false
+		if m.marketListingSel >= len(m.marketListings) && len(m.marketListings) > 0 {
+			m.marketListingSel = 0
+		}
+		return m, nil
+	case listCardDoneMsg:
+		m.listCardLoading = false
+		if msg.err != nil {
+			m.listCardErr = "挂售失败: " + msg.err.Error()
+		} else {
+			m.listCardErr = ""
+			m.listCardDone = true
+		}
+		return m, nil
+	case unlistDoneMsg:
+		m.listCardLoading = false
+		if msg.err != nil {
+			m.listCardErr = "下架失败: " + msg.err.Error()
+		} else {
+			m.listCardDone = true
+		}
+		return m, nil
+	case buyDoneMsg:
+		m.marketLoading = false
+		if msg.err != nil {
+			m.marketErr = "购买失败: " + msg.err.Error()
+		} else {
+			m.marketErr = ""
+			// 买完自动刷新
+			m.marketOffset = 0
+			m.marketListingSel = 0
+			m.marketLoading = true
+			return m, m.loadMarketCmd()
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -291,6 +372,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateMint(msg)
 	case PhaseMyCards:
 		return m.updateMyCards(msg)
+	case PhaseMarket:
+		return m.updateMarket(msg)
+	case PhaseListCard:
+		return m.updateListCard(msg)
 	case PhaseChat:
 		return m.updateChat(msg)
 	}
@@ -316,6 +401,10 @@ func (m Model) View() string {
 		return m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
 	case PhaseMyCards:
 		return m.viewMyCards()
+	case PhaseMarket:
+		return m.viewMarket()
+	case PhaseListCard:
+		return m.viewListCard()
 	case PhaseChat:
 		return m.viewChat()
 	}
@@ -1222,6 +1311,7 @@ var menuItems = []struct {
 }{
 	{"🎴", "Mint a Geoyuan Card", "Create your permanent geodigital asset on Polygon"},
 	{"🃏", "My Cards", "View your minted cards and H3 cells"},
+	{"🛒", "Marketplace", "Browse & trade cards listed by the community"},
 	{"💬", "Crew Chat", "Talk with other Geoyuan builders"},
 	{"🌐", "Open geoyuan.com", "Learn more about the Network State"},
 	{"🚪", "Exit", "Disconnect from SSH"},
@@ -1282,14 +1372,21 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showNeighbors = false
 			m.phase = PhaseMyCards
 			return m, m.loadMyCardsCmd()
-		case 2: // Crew Chat
+		case 2: // Marketplace
+			m.marketLoading = true
+			m.marketErr = ""
+			m.marketOffset = 0
+			m.marketListingSel = 0
+			m.phase = PhaseMarket
+			return m, m.loadMarketCmd()
+		case 3: // Crew Chat
 			m.enterChat()
 			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
-		case 3: // geoyuan.com — 显示 URL 后退出
+		case 4: // geoyuan.com — 显示 URL 后退出
 			fmt.Print("\n  🌐 Visit https://www.geoyuan.com/\n\n")
 			m.Done = true
 			return m, tea.Quit
-		case 4: // Exit
+		case 5: // Exit
 			m.cleanupChat()
 			m.Done = true
 			return m, tea.Quit
@@ -1518,6 +1615,354 @@ func (m Model) updateMyCards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showNeighbors = true
 			return m, m.loadNeighborCmd(m.neighborH3, m.neighborK)
 		}
+	case "l", "L":
+		if !m.showNeighbors && len(m.myCardsCache) > 0 {
+			// 进入挂售 PhaseListCard（选卡 → 输入价 → 链上 list）
+			m.listCardCursor = 0
+			m.listCardErr = ""
+			m.listCardDone = false
+			m.listCardLoading = false
+			m.listPriceWei = ""
+			ti := textinput.New()
+			ti.Prompt = "MATIC 价格: "
+			ti.CharLimit = 20
+			ti.Placeholder = "0.50 = 0.5 MATIC"
+			ti.Focus()
+			m.listInput = ti
+			m.phase = PhaseListCard
+			return m, nil
+		}
 	}
 	return m, nil
+}
+
+// ═══════════════════════════════════════════════
+//
+//	🛒 Marketplace — 全市场挂售浏览 + 购买
+//
+// ═══════════════════════════════════════════════
+
+const marketPageSize = 10
+
+func (m Model) loadMarketCmd() tea.Cmd {
+	svc := m.cardService
+	offset := m.marketOffset
+	return func() tea.Msg {
+		if svc == nil {
+			return marketLoadedMsg{err: fmt.Errorf("链上服务不可用")}
+		}
+		count, err := svc.ListingCount()
+		if err != nil {
+			return marketLoadedMsg{err: err}
+		}
+		listings, err := svc.MarketListings(marketPageSize, offset)
+		if err != nil {
+			return marketLoadedMsg{err: err}
+		}
+		return marketLoadedMsg{listings: listings, count: count}
+	}
+}
+
+func (m Model) viewMarket() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar(" · Marketplace"))
+	b.WriteString("\n")
+	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
+	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
+
+	if m.marketLoading {
+		b.WriteString(cyan.Render("  Loading Geoyuan Marketplace...") + "\n")
+		return b.String()
+	}
+	if m.marketErr != "" {
+		b.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.marketErr)) + "\n\n")
+		b.WriteString(dim.Render("  R retry · Esc back\n"))
+		return b.String()
+	}
+
+	b.WriteString(neon.Render(fmt.Sprintf("  🛒 Geoyuan Marketplace   (%d listing(s) total)", m.marketCount)) + "\n\n")
+
+	if len(m.marketListings) == 0 {
+		b.WriteString(dim.Render("  📭 No cards listed yet.\n"))
+		b.WriteString("  Be the first — go to My Cards, select a card, press L to list.\n\n")
+	} else {
+		for i, l := range m.marketListings {
+			prefix := "  "
+			if i == m.marketListingSel {
+				prefix = yellow.Render("  ▸ ")
+			}
+			b.WriteString(prefix)
+			b.WriteString(fmt.Sprintf("#%s  %s", l.TokenID, l.Title))
+			b.WriteString("   ")
+			b.WriteString(green.Render(fmt.Sprintf("◎ %s MATIC", l.PriceMATIC)))
+			b.WriteString("\n")
+			b.WriteString("    ")
+			b.WriteString(dim.Render(fmt.Sprintf("Seller: %s  ·  cell: 0x%x  ·  %.4f,%.4f",
+				shortAddr(l.Seller), l.H3Index, l.Lat, l.Lon)))
+			b.WriteString("\n\n")
+		}
+	}
+
+	// 分页
+	if m.marketCount > marketPageSize {
+		page := m.marketOffset / marketPageSize
+		totalPages := (m.marketCount + marketPageSize - 1) / marketPageSize
+		b.WriteString(dim.Render(fmt.Sprintf("  Page %d/%d", page+1, totalPages)) + "\n")
+	}
+
+	b.WriteString(dim.Render("\n  ↑↓/jk select · B buy · N next page · P prev page · R reload · Esc back\n"))
+	return b.String()
+}
+
+func (m Model) updateMarket(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.phase = PhaseMenu
+		return m, nil
+	case "r", "R":
+		if !m.marketLoading {
+			m.marketLoading = true
+			m.marketErr = ""
+			return m, m.loadMarketCmd()
+		}
+	case "up", "k":
+		if m.marketListingSel > 0 {
+			m.marketListingSel--
+		}
+	case "down", "j":
+		if m.marketListingSel < len(m.marketListings)-1 {
+			m.marketListingSel++
+		}
+	case "n", "N":
+		if m.marketOffset+marketPageSize < m.marketCount && !m.marketLoading {
+			m.marketOffset += marketPageSize
+			m.marketListingSel = 0
+			m.marketLoading = true
+			m.marketErr = ""
+			return m, m.loadMarketCmd()
+		}
+	case "p", "P":
+		if m.marketOffset > 0 && !m.marketLoading {
+			m.marketOffset -= marketPageSize
+			if m.marketOffset < 0 {
+				m.marketOffset = 0
+			}
+			m.marketListingSel = 0
+			m.marketLoading = true
+			m.marketErr = ""
+			return m, m.loadMarketCmd()
+		}
+	case "b", "B", "enter":
+		if len(m.marketListings) == 0 {
+			return m, nil
+		}
+		if msg.String() != "b" && msg.String() != "B" {
+			return m, nil
+		}
+		// 买选中的 listing
+		if !m.chainReady() {
+			m.marketErr = "链上钱包未就绪，无法购买"
+			return m, nil
+		}
+		l := m.marketListings[m.marketListingSel]
+		return m, m.buyCmd(l.TokenID, l.PriceWei)
+	}
+	return m, nil
+}
+
+// ═══════════════════════════════════════════════
+//
+//	📦 List Card — 选卡 → 输入价 → 挂售
+//
+// ═══════════════════════════════════════════════
+
+func (m Model) viewListCard() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar(" · List Card for Sale"))
+	b.WriteString("\n")
+	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
+	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
+
+	if m.listCardLoading {
+		b.WriteString(cyan.Render("  ⛓️  Submitting listing to Polygon Amoy...") + "\n")
+		b.WriteString(dim.Render("  (waiting for receipt, 10-60s)") + "\n")
+		return b.String()
+	}
+
+	if m.listCardDone {
+		b.WriteString(green.Render("  ✓ Listing successful!") + "\n\n")
+		b.WriteString(dim.Render("  Your card is now on the marketplace. Press Esc to return.\n"))
+		return b.String()
+	}
+
+	// 选卡列表
+	b.WriteString(neon.Render("  🃏 Pick a card to list") + "\n\n")
+	if len(m.myCardsCache) == 0 {
+		b.WriteString(red.Render("  ✗ No cards to list. Go mint first.\n"))
+	} else {
+		for i, c := range m.myCardsCache {
+			prefix := "  "
+			if i == m.listCardCursor {
+				prefix = yellow.Render("  ▸ ")
+			}
+			b.WriteString(prefix)
+			b.WriteString(fmt.Sprintf("#%s  %s", c.TokenID, c.Title))
+			b.WriteString("\n")
+			b.WriteString(dim.Render(fmt.Sprintf("    cell: 0x%x  ·  %.4f,%.4f", c.H3Index, c.Lat, c.Lon)))
+			b.WriteString("\n\n")
+		}
+	}
+
+	// 价格输入
+	if len(m.myCardsCache) > 0 {
+		b.WriteString(cyan.Render("  💰 Set price (MATIC):") + "\n\n")
+		b.WriteString("  " + m.listInput.View() + "\n\n")
+		b.WriteString(dim.Render("  Enter = confirm listing · Esc = cancel · ↑↓ pick card"))
+	}
+
+	if m.listCardErr != "" {
+		b.WriteString("\n\n  " + red.Render(m.listCardErr))
+	}
+	return b.String()
+}
+
+func (m Model) updateListCard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.listCardLoading {
+		return m, nil
+	}
+	if m.listCardDone {
+		if msg.String() == "esc" || msg.String() == "enter" {
+			m.phase = PhaseMyCards
+			m.listCardDone = false
+			return m, m.loadMyCardsCmd()
+		}
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.listInput, cmd = m.listInput.Update(msg)
+
+	switch msg.String() {
+	case "esc", "q":
+		m.phase = PhaseMyCards
+		return m, nil
+	case "up", "k":
+		if m.listCardCursor > 0 {
+			m.listCardCursor--
+		}
+	case "down", "j":
+		if m.listCardCursor < len(m.myCardsCache)-1 {
+			m.listCardCursor++
+		}
+	case "enter":
+		if len(m.myCardsCache) == 0 {
+			return m, nil
+		}
+		priceStr := strings.TrimSpace(m.listInput.Value())
+		if priceStr == "" {
+			m.listCardErr = "请输入价格（0 = 免费）"
+			return m, cmd
+		}
+		if !m.chainReady() {
+			m.listCardErr = "链上钱包未就绪"
+			return m, cmd
+		}
+		card := m.myCardsCache[m.listCardCursor]
+		return m, m.listCardCmd(card.TokenID, priceStr)
+	}
+	return m, cmd
+}
+
+// ═══════════════════════════════════════════════
+//
+//	🔧 Async cmds — list/buy 链上操作
+//
+// ═══════════════════════════════════════════════
+
+func (m Model) listCardCmd(tokenIDstr, priceMATICStr string) tea.Cmd {
+	mgr := m.walletMgr
+	if mgr == nil {
+		return func() tea.Msg { return listCardDoneMsg{err: fmt.Errorf("钱包管理器不可用")} }
+	}
+	uid := int64(0)
+	if m.user != nil {
+		uid = m.user.ID
+	}
+	tid := new(big.Int)
+	tid.SetString(tokenIDstr, 10)
+	if tid.Sign() == 0 {
+		return func() tea.Msg { return listCardDoneMsg{err: fmt.Errorf("无效 token ID: %s", tokenIDstr)} }
+	}
+	priceWei, err := maticToWei(priceMATICStr)
+	if err != nil {
+		return func() tea.Msg { return listCardDoneMsg{err: err} }
+	}
+
+	return func() tea.Msg {
+		_, _, err := mgr.List(uid, tid, priceWei)
+		if err != nil {
+			return listCardDoneMsg{err: err}
+		}
+		return listCardDoneMsg{}
+	}
+}
+
+func (m Model) buyCmd(tokenIDstr, priceWeiStr string) tea.Cmd {
+	mgr := m.walletMgr
+	if mgr == nil {
+		return func() tea.Msg { return buyDoneMsg{err: fmt.Errorf("钱包管理器不可用")} }
+	}
+	uid := int64(0)
+	if m.user != nil {
+		uid = m.user.ID
+	}
+	tid := new(big.Int)
+	tid.SetString(tokenIDstr, 10)
+	if tid.Sign() == 0 {
+		return func() tea.Msg { return buyDoneMsg{err: fmt.Errorf("无效 token ID")} }
+	}
+	valueWei, ok := new(big.Int).SetString(priceWeiStr, 10)
+	if !ok {
+		return func() tea.Msg { return buyDoneMsg{err: fmt.Errorf("无效价格: %s", priceWeiStr)} }
+	}
+
+	return func() tea.Msg {
+		_, _, err := mgr.Buy(uid, tid, valueWei)
+		if err != nil {
+			return buyDoneMsg{err: err}
+		}
+		return buyDoneMsg{}
+	}
+}
+
+// ── 小工具 ──
+func shortAddr(addr string) string {
+	if len(addr) <= 10 {
+		return addr
+	}
+	return addr[:6] + "…" + addr[len(addr)-4:]
+}
+
+// maticToWei — MATIC 字符串 → wei big.Int
+func maticToWei(s string) (*big.Int, error) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return nil, fmt.Errorf("价格解析失败: %v", err)
+	}
+	if f < 0 {
+		return nil, fmt.Errorf("价格不能为负")
+	}
+	// MATIC 18 位精度
+	wei := new(big.Float).Mul(big.NewFloat(f), big.NewFloat(1e18))
+	out := new(big.Int)
+	wei.Int(out)
+	return out, nil
 }

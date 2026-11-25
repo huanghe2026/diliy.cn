@@ -28,7 +28,38 @@ import (
 	"geoyuan.cn/ssh/internal/h3"
 )
 
-// Card — 链上 GeoyuanCard 简化表示
+// ─── 市场类型 ────────────────────────────────────────
+
+// MarketListing — 链上挂售信息（含 metadata 拼装）
+type MarketListing struct {
+	TokenID     string  `json:"tokenId"`
+	Seller      string  `json:"seller"`
+	PriceWei    string  `json:"priceWei"`
+	PriceMATIC  string  `json:"priceMATIC"`
+	ListedBlock uint64  `json:"listedBlock"`
+	Title       string  `json:"title"`
+	Color       string  `json:"color"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+	H3Index     uint64  `json:"h3Index"`
+}
+
+// priceMATIC — wei → MATIC 显示（18 位精度，2 位小数）
+func priceMATIC(wei *big.Int) string {
+	if wei == nil {
+		return "0.00"
+	}
+	// MATIC 是 18 位精度
+	denom := big.NewInt(1000000000000000000) // 1e18
+	q := new(big.Int).Div(wei, denom)
+	r := new(big.Int).Mod(wei, denom)
+	// r / 1e16 取 2 位小数
+	denom2 := big.NewInt(10000000000000000) // 1e16
+	cents := new(big.Int).Div(r, denom2)
+	return fmt.Sprintf("%s.%02d", q.String(), cents.Uint64())
+}
+
+// ─── Card 类型（不变）───────────────────────────────
 type Card struct {
 	TokenID   string  `json:"tokenId"` // hex 字符串
 	H3Index   uint64  `json:"h3Index"`
@@ -346,6 +377,200 @@ func (s *Service) NeighborMatch(selfAddrHex string, h3Index uint64, k int) ([]Ca
 		return nil, fmt.Errorf("neighborMatch: %w", err)
 	}
 	return s.fetchMetadataBatch(ctx, tokenIDs, ""), nil
+}
+
+// ─── 市场：挂售 / 下架 / 购买 ──────────────────────────
+
+// List — 把自己的一张卡挂到市场（token 转合约托管）
+func (s *Service) List(key *ecdsa.PrivateKey, tokenID *big.Int, priceWei *big.Int) (txHash string, block uint64, err error) {
+	if s.gyc == nil || key == nil {
+		return "", 0, fmt.Errorf("合约未就绪或无私钥")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	chainID := s.chain.ChainID()
+	opts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(chainID))
+	if err != nil {
+		return "", 0, fmt.Errorf("transactor: %w", err)
+	}
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	nonce, err := s.chain.Nonce(from.Hex())
+	if err != nil {
+		return "", 0, fmt.Errorf("nonce: %w", err)
+	}
+	opts.Nonce = big.NewInt(int64(nonce))
+	opts.GasLimit = 300_000 // list 比 mint 便宜（不需要 SSTORE 字符串）
+	opts.Context = ctx
+
+	tx, err := s.gyc.List(opts, tokenID, priceWei)
+	if err != nil {
+		return "", 0, fmt.Errorf("list tx: %w", err)
+	}
+	receipt, err := bind.WaitMined(ctx, s.chain.Eth(), tx)
+	if err != nil {
+		return "", 0, fmt.Errorf("wait receipt: %w", err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return tx.Hash().Hex(), receipt.BlockNumber.Uint64(), fmt.Errorf("list reverted (tx=%s)", tx.Hash().Hex())
+	}
+	return receipt.TxHash.Hex(), receipt.BlockNumber.Uint64(), nil
+}
+
+// Unlist — 下架自己挂的卡（token 回到 seller）
+func (s *Service) Unlist(key *ecdsa.PrivateKey, tokenID *big.Int) (txHash string, block uint64, err error) {
+	if s.gyc == nil || key == nil {
+		return "", 0, fmt.Errorf("合约未就绪或无私钥")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	chainID := s.chain.ChainID()
+	opts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(chainID))
+	if err != nil {
+		return "", 0, fmt.Errorf("transactor: %w", err)
+	}
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	nonce, err := s.chain.Nonce(from.Hex())
+	if err != nil {
+		return "", 0, fmt.Errorf("nonce: %w", err)
+	}
+	opts.Nonce = big.NewInt(int64(nonce))
+	opts.GasLimit = 300_000
+	opts.Context = ctx
+
+	tx, err := s.gyc.Unlist(opts, tokenID)
+	if err != nil {
+		return "", 0, fmt.Errorf("unlist tx: %w", err)
+	}
+	receipt, err := bind.WaitMined(ctx, s.chain.Eth(), tx)
+	if err != nil {
+		return "", 0, fmt.Errorf("wait receipt: %w", err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return tx.Hash().Hex(), receipt.BlockNumber.Uint64(), fmt.Errorf("unlist reverted (tx=%s)", tx.Hash().Hex())
+	}
+	return receipt.TxHash.Hex(), receipt.BlockNumber.Uint64(), nil
+}
+
+// Buy — 买下一张挂售卡（合约里 MATIC 给 seller，token 给 buyer）
+// valueWei — 实际随交易送的金额（必须 >= listing.price）
+func (s *Service) Buy(key *ecdsa.PrivateKey, tokenID *big.Int, valueWei *big.Int) (txHash string, block uint64, err error) {
+	if s.gyc == nil || key == nil {
+		return "", 0, fmt.Errorf("合约未就绪或无私钥")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	chainID := s.chain.ChainID()
+	opts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(chainID))
+	if err != nil {
+		return "", 0, fmt.Errorf("transactor: %w", err)
+	}
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	nonce, err := s.chain.Nonce(from.Hex())
+	if err != nil {
+		return "", 0, fmt.Errorf("nonce: %w", err)
+	}
+	opts.Nonce = big.NewInt(int64(nonce))
+	opts.GasLimit = 300_000
+	opts.Value = valueWei // payable
+	opts.Context = ctx
+
+	tx, err := s.gyc.Buy(opts, tokenID)
+	if err != nil {
+		return "", 0, fmt.Errorf("buy tx: %w", err)
+	}
+	receipt, err := bind.WaitMined(ctx, s.chain.Eth(), tx)
+	if err != nil {
+		return "", 0, fmt.Errorf("wait receipt: %w", err)
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return tx.Hash().Hex(), receipt.BlockNumber.Uint64(), fmt.Errorf("buy reverted (tx=%s)", tx.Hash().Hex())
+	}
+	return receipt.TxHash.Hex(), receipt.BlockNumber.Uint64(), nil
+}
+
+// ListingOf — 查某张卡的挂售状态（空 seller 表示未挂售）
+func (s *Service) ListingOf(tokenID *big.Int) (seller string, priceWei *big.Int, listedBlock uint64, err error) {
+	if s.gyc == nil {
+		return "", big.NewInt(0), 0, fmt.Errorf("合约未就绪")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	res, err := s.gyc.ListingOf(&bind.CallOpts{Context: ctx}, tokenID)
+	if err != nil {
+		return "", big.NewInt(0), 0, fmt.Errorf("listingOf: %w", err)
+	}
+	return res.Seller.Hex(), res.Price, res.ListedBlock.Uint64(), nil
+}
+
+// MarketListings — 拉全市场挂售列表（分页）
+func (s *Service) MarketListings(limit, offset uint64) ([]MarketListing, error) {
+	if s.gyc == nil {
+		return []MarketListing{}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	res, err := s.gyc.MarketListings(&bind.CallOpts{Context: ctx}, new(big.Int).SetUint64(limit), new(big.Int).SetUint64(offset))
+	if err != nil {
+		return nil, fmt.Errorf("marketListings: %w", err)
+	}
+	return s.fetchMarketMeta(ctx, res.TokenIds, res.Prices, res.Sellers), nil
+}
+
+// ListingCount — 全市场挂售总数
+func (s *Service) ListingCount() (uint64, error) {
+	if s.gyc == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	n, err := s.gyc.ListingCount(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return 0, fmt.Errorf("listingCount: %w", err)
+	}
+	return n.Uint64(), nil
+}
+
+// fetchMarketMeta — 并发拉市场 listing 的 metadata，拼出完整 MarketListing
+func (s *Service) fetchMarketMeta(ctx context.Context, tokenIDs []*big.Int, prices []*big.Int, sellers []common.Address) []MarketListing {
+	out := make([]MarketListing, len(tokenIDs))
+	sem := make(chan struct{}, metadataConcurrency)
+	var wg sync.WaitGroup
+	for i, tid := range tokenIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, tid *big.Int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
+			if err != nil {
+				out[i] = MarketListing{
+					TokenID:    tid.String(),
+					Seller:     sellers[i].Hex(),
+					PriceWei:   prices[i].String(),
+					PriceMATIC: priceMATIC(prices[i]),
+				}
+				return
+			}
+			out[i] = MarketListing{
+				TokenID:     tid.String(),
+				Seller:      sellers[i].Hex(),
+				PriceWei:    prices[i].String(),
+				PriceMATIC:  priceMATIC(prices[i]),
+				Title:       md.Title,
+				Color:       md.Color,
+				Lat:         float64(md.LatE4) / 10000.0,
+				Lon:         float64(md.LonE4) / 10000.0,
+				H3Index:     md.H3Index,
+			}
+		}(i, tid)
+	}
+	wg.Wait()
+	return out
 }
 
 // ─── 工具 ────────────────────────────────────────────
