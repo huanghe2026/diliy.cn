@@ -683,7 +683,7 @@ func (m Model) viewRegister() string {
 	b.WriteString(m.headerBar(" · Register"))
 
 	// 启动欢迎 splash 横幅（Register 页独有的开场）
-	b.WriteString("\n" + RenderSplash() + "\n\n")
+	b.WriteString("\n" + RenderSplash(m.termWidth) + "\n\n")
 
 	// 注册表单卡（带 label + 下划线 + 字数计数 + 校验 hint）
 	name := m.nameInput.Value()

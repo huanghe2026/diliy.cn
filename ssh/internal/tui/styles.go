@@ -24,6 +24,25 @@ var geoyuanLogoFallback string
 //go:embed assets/geoyuan_splash.txt
 var geoyuanSplash string
 
+//go:embed assets/geoyuan_splash_braille.txt
+var geoyuanSplashBraille string
+
+// SplashTier 两层 splash fallback
+type SplashTier int
+
+const (
+	SplashTierBraille SplashTier = iota // Braille 高密度（width ≥ 80）
+	SplashTierBoxed                     // ╔═╗ 朴素版（任何终端）
+)
+
+// RenderSplash 启动欢迎横幅 — 两层 fallback
+func RenderSplash(width int) string {
+	if width >= 80 {
+		return geoyuanSplashBraille
+	}
+	return geoyuanSplash
+}
+
 // LogoTier 三层 fallback 优先级
 type LogoTier int
 
@@ -61,11 +80,6 @@ func RenderLogo(width int) string {
 		return geoyuanLogoHalfblock
 	}
 	return geoyuanLogoFallback
-}
-
-// RenderSplash 启动横幅（欢迎画面）
-func RenderSplash() string {
-	return geoyuanSplash
 }
 
 // ═══════════════════════════════════════════════
