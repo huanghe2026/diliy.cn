@@ -91,6 +91,10 @@ type Model struct {
 	selected  int
 	answers   []int
 
+	// 动画状态（spinner 帧 + cursor blink 帧，全局共享）
+	spinnerFrame   uint
+	cursorBlink    uint
+
 	// 结果
 	score  int
 	passed bool
@@ -193,12 +197,45 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, textinput.Blink)
 	case PhaseChat:
 		cmds = append(cmds, textinput.Blink, receiveMsgs(m.sub))
-	case PhaseWelcome:
-		cmds = append(cmds, tea.Tick(1800*time.Millisecond, func(t time.Time) tea.Msg {
-			return welcomeDoneMsg{}
-		}))
 	}
+	// 全局 spinner + cursor blink tick（任何阶段都要）
+	cmds = append(cmds, tickSpinner())
 	return tea.Batch(cmds...)
+}
+
+// tickSpinner 全局动画 tick —— 60fps 足够视觉流畅
+func tickSpinner() tea.Cmd {
+	return tea.Tick(120*time.Millisecond, func(t time.Time) tea.Msg {
+		return spinnerTickMsg{t}
+	})
+}
+
+type spinnerTickMsg struct{ t time.Time }
+
+// spinnerFrames 动画帧
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// spinner 返回当前帧 + 颜色（青蓝色）
+func (m Model) spinner() string {
+	frame := spinnerFrames[m.spinnerFrame%uint(len(spinnerFrames))]
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("45")). // 亮青蓝
+		Bold(true).
+		Render(frame)
+}
+
+// cursorMarker 返回闪烁的 "▶ " 当前选中标记
+func (m Model) cursorMarker() string {
+	// blink 周期 4 帧（480ms）：前 2 帧实心 ▶ ，后 2 帧半透明 ▷
+	if m.cursorBlink%4 < 2 {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("226")). // 亮黄
+			Bold(true).
+			Render("▶ ")
+	}
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")). // 暗灰（半透明感）
+		Render("▷ ")
 }
 
 type (
@@ -252,6 +289,13 @@ func receiveMsgs(sub *chat.Subscription) tea.Cmd {
 // Update 实现 tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	// 🌀 动画 tick —— 全局，每 120ms
+	case spinnerTickMsg:
+		m.spinnerFrame++
+		m.cursorBlink++
+		// 每 tick 继续下一个（不中断）
+		return m, tickSpinner()
 
 	// 🧭 终端尺寸变化 — Bubble Tea 自动发
 	case tea.WindowSizeMsg:
@@ -1355,7 +1399,7 @@ func (m Model) viewMenu() string {
 		prefix := "  "
 		style := lipgloss.NewStyle()
 		if i == m.menuCursor {
-			prefix = "▸ "
+			prefix = m.cursorMarker()
 			style = style.Bold(true).Foreground(lipgloss.Color("45"))
 		} else {
 			style = style.Foreground(lipgloss.Color("245"))
@@ -1521,7 +1565,7 @@ func (m Model) viewMyCards() string {
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 
 	if m.myCardsLoading {
-		b.WriteString(cyan.Render("  Loading your cards from Polygon Amoy...") + "\n")
+		b.WriteString("  " + m.spinner() + "  Loading your cards from Polygon Amoy...\n")
 		b.WriteString(dim.Render("  (this may take 10-30 seconds)\n"))
 		return b.String()
 	}
@@ -1581,7 +1625,7 @@ func (m Model) viewMyCards() string {
 		// 邻居匹配结果
 		b.WriteString(neon.Render(fmt.Sprintf("  🧭 Neighbor Match — k=%d around 0x%x", m.neighborK, m.neighborH3)) + "\n\n")
 		if m.neighborLoading {
-			b.WriteString(cyan.Render("  Loading neighbor matches...") + "\n")
+			b.WriteString("  " + m.spinner() + "  Loading neighbor matches...\n")
 			return b.String()
 		}
 		if m.neighborErr != nil {
@@ -1691,12 +1735,10 @@ func (m Model) viewMarket() string {
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
 
 	if m.marketLoading {
-		b.WriteString(cyan.Render("  Loading Geoyuan Marketplace...") + "\n")
+		b.WriteString("  " + m.spinner() + "  Loading Geoyuan Marketplace...\n")
 		return b.String()
 	}
 	if m.marketErr != "" {
@@ -1714,7 +1756,7 @@ func (m Model) viewMarket() string {
 		for i, l := range m.marketListings {
 			prefix := "  "
 			if i == m.marketListingSel {
-				prefix = yellow.Render("  ▸ ")
+				prefix = m.cursorMarker()
 			}
 			b.WriteString(prefix)
 			b.WriteString(fmt.Sprintf("#%s  %s", l.TokenID, l.Title))
@@ -1808,10 +1850,9 @@ func (m Model) viewListCard() string {
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
 
 	if m.listCardLoading {
-		b.WriteString(cyan.Render("  ⛓️  Submitting listing to Polygon Amoy...") + "\n")
+		b.WriteString("  " + m.spinner() + "  Submitting listing to Polygon Amoy...\n")
 		b.WriteString(dim.Render("  (waiting for receipt, 10-60s)") + "\n")
 		b.WriteString(hintBar("waiting..."))
 		return b.String()
@@ -1834,7 +1875,7 @@ func (m Model) viewListCard() string {
 		for i, c := range m.myCardsCache {
 			prefix := "  "
 			if i == m.listCardCursor {
-				prefix = yellow.Render("  ▸ ")
+				prefix = m.cursorMarker()
 			}
 			b.WriteString(prefix)
 			b.WriteString(fmt.Sprintf("#%s  %s", c.TokenID, c.Title))
