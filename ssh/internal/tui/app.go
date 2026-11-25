@@ -483,25 +483,47 @@ func (m *Model) enterChat() {
 //	🏗️  Header Bar (所有页面共享)
 //
 // ═══════════════════════════════════════════════
+// breadcrumb 返回当前导航路径（供 headerBar 展示）
+func (m Model) breadcrumb() string {
+	switch m.phase {
+	case PhaseWelcome:
+		return "  Home  →  Welcome Back"
+	case PhaseMenu:
+		return "  Home"
+	case PhaseMintCard:
+		return "  Home  →  Mint Card"
+	case PhaseMyCards:
+		if m.showNeighbors {
+			return "  Home  →  My Cards  →  Neighbors"
+		}
+		return "  Home  →  My Cards"
+	case PhaseMarket:
+		return "  Home  →  Marketplace"
+	case PhaseListCard:
+		return "  Home  →  My Cards  →  List for Sale"
+	case PhaseChat:
+		return "  Home  →  Crew Chat"
+	}
+	return "  Home"
+}
+
 // headerBar 顶部条：logo + 面包屑 + 用户信息 + 全局返回提示
 func (m Model) headerBar(title string) string {
 	var b strings.Builder
 
-	// 左侧：logo + 面包屑
+	// 左侧：logo + 面包屑（替代原来的 title 参数）
 	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
-	b.WriteString(styleHeader.Render("  " + title))
-
-	// 中间：填充到合适位置
-	b.WriteString(strings.Repeat(" ", 2))
+	b.WriteString(styleHeader.Render(m.breadcrumb()))
 
 	// 右侧：用户信息
 	right := m.userInfoString()
+	b.WriteString(strings.Repeat(" ", 2))
 	b.WriteString(right)
 
-	// 最右：全局 Esc 返回提示（不在 Menu 阶段显示）
+	// 最右：全局 Esc 返回提示（不在 Menu/Chat 阶段显示）
 	if m.phase != PhaseMenu && m.phase != PhaseChat {
 		b.WriteString(strings.Repeat(" ", 2))
-		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(" Esc←Menu"))
+		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(" Esc←Back"))
 	}
 
 	// 分隔线
@@ -1901,6 +1923,12 @@ func (m Model) viewListCard() string {
 
 func (m Model) updateListCard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.listCardLoading {
+		// loading 阶段也允许 Esc/q 紧急返回 Menu（防止死等链上）
+		if msg.String() == "esc" || msg.String() == "q" {
+			m.listCardLoading = false
+			m.listCardErr = "(已取消挂售)"
+			return m, nil
+		}
 		return m, nil
 	}
 	if m.listCardDone {
