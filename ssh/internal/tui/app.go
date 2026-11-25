@@ -43,11 +43,13 @@ const (
 	PhaseWelcome
 	PhaseRetry
 	PhaseChat
-	PhaseMenu     // 主菜单（Welcome 后进入）
-	PhaseMintCard // Mint GeoyuanCard 视图
-	PhaseMyCards  // 我的卡片列表
-	PhaseMarket   // 全市场挂售浏览
-	PhaseListCard // 把自己的卡挂售
+	PhaseMenu        // 主菜单（Welcome 后进入）
+	PhaseMintCard    // Mint GeoyuanCard 视图
+	PhaseMyCards     // 我的卡片列表
+	PhaseMarket      // 全市场挂售浏览
+	PhaseListCard    // 把自己的卡挂售
+	PhaseQuitConfirm // ⚠️ 退出确认弹窗（防误触）
+	PhaseHelp        // ? 帮助浮层（覆盖任意页面之上）
 )
 
 // ═══════════════════════════════════════════════
@@ -68,9 +70,10 @@ var usernameRe = regexp.MustCompile(`^[a-z0-9_]{2,20}$`)
 type Model struct {
 	store     *store.Store
 	generator *questiongen.Generator
-	fp        string
-	user      *store.User
-	phase     Phase
+	fp          string
+	user        *store.User
+	phase       Phase
+	prevPhase   Phase // 帮助浮层关闭后回去的阶段
 
 	// 🧭 终端尺寸（WindowSizeMsg 注入）— 用来让 View() 自适应
 	termWidth  int
@@ -387,23 +390,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Done = true
 		return m, tea.Quit
 	}
+
+	// ═══ 全局拦截 ═══
+	// 1) ? 键（非 Register/Quiz/QuitConfirm 阶段）→ 弹出帮助浮层
+	if msg.String() == "/" {
+		// Bubble Tea 对 ? 的处理：有的终端发 "/"，有的发 shift+/
+		// msg.String() 对 / 的值取决于键盘布局，我们也映射一下 shift 组合
+	}
+	switch msg.String() {
+	case "?", "/":
+		// Register/Quiz 阶段先不打扰（正在输入/答题）
+		if m.phase != PhaseRegister && m.phase != PhaseQuiz && m.phase != PhaseQuitConfirm && m.phase != PhaseHelp {
+			m.prevPhase = m.phase
+			m.phase = PhaseHelp
+			return m, nil
+		}
+	case "escape", "esc":
+		// Esc 在 Menu/Welcome/Result/Chat 直接退出 → 改为确认弹窗
+		if m.phase == PhaseMenu || m.phase == PhaseChat || m.phase == PhaseWelcome || m.phase == PhaseResult || m.phase == PhaseRetry {
+			m.prevPhase = m.phase
+			m.phase = PhaseQuitConfirm
+			return m, nil
+		}
+	}
+
+	// ═══ 分发到各阶段 ═══
 	switch m.phase {
 	case PhaseRegister:
 		return m.updateRegister(msg)
 	case PhaseQuiz:
 		return m.updateQuiz(msg)
 	case PhaseResult:
-		if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
-			if m.passed {
-				m.phase = PhaseMenu
-				m.menuCursor = 0
-				return m, nil
-			}
-			m.Done = true
-			return m, tea.Quit
+		if msg.String() == "enter" {
+			m.phase = PhaseMenu
+			m.menuCursor = 0
+			return m, nil
 		}
 	case PhaseWelcome:
-		if msg.String() == "enter" || msg.String() == "q" || msg.String() == "esc" {
+		if msg.String() == "enter" {
 			m.phase = PhaseMenu
 			m.menuCursor = 0
 			return m, nil
@@ -422,6 +446,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateListCard(msg)
 	case PhaseChat:
 		return m.updateChat(msg)
+	case PhaseQuitConfirm:
+		return m.updateQuitConfirm(msg)
+	case PhaseHelp:
+		return m.updateHelp(msg)
 	}
 	return m, nil
 }
@@ -451,6 +479,12 @@ func (m Model) View() string {
 		return m.viewListCard()
 	case PhaseChat:
 		return m.viewChat()
+	case PhaseQuitConfirm:
+		// 半透明遮罩 + 确认框
+		return m.viewQuitConfirm()
+	case PhaseHelp:
+		// 先渲染底层页面，再叠加帮助框
+		return m.viewHelpOverlay()
 	}
 	return ""
 }
@@ -2073,4 +2107,176 @@ func maticToWei(s string) (*big.Int, error) {
 	out := new(big.Int)
 	wei.Int(out)
 	return out, nil
+}
+
+// ═══════════════════════════════════════════════
+//
+//	⚠️ 退出确认弹窗（PhaseQuitConfirm）
+//
+// ═══════════════════════════════════════════════
+
+func (m Model) viewQuitConfirm() string {
+	// 先渲染底层页面（让弹窗显得是"浮层"）
+	var bg string
+	switch m.prevPhase {
+	case PhaseMenu:
+		bg = m.viewMenu()
+	case PhaseWelcome:
+		bg = m.viewWelcome()
+	case PhaseMyCards:
+		bg = m.viewMyCards()
+	case PhaseMarket:
+		bg = m.viewMarket()
+	case PhaseListCard:
+		bg = m.viewListCard()
+	case PhaseMintCard:
+		bg = m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
+	case PhaseChat:
+		bg = m.viewChat()
+	default:
+		bg = m.viewMenu()
+	}
+
+	// 半透明遮罩：用大量空格盖上去（近似效果）
+	// 实际上 Bubble Tea 做真正 overlay 复杂，这里简化为底部弹出 modal
+	var b strings.Builder
+	b.WriteString(strings.Repeat("\n", 2)) // 留空
+
+	warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
+	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
+
+	// 画一个居中的 modal 框
+	boxTop := "┌────────────────────────────────────────────────────┐"
+	boxMid := "│ " + warn.Render("⚠  Are you sure you want to quit Geoyuan?") + " │"
+	boxLine := "│" + strings.Repeat(" ", 52) + "│"
+	yesLine := "│   " + green.Render("y / Enter") + "  → Quit TUI                    │"
+	noLine := "│   " + neon.Render("n / Esc") + "  → Stay here (back to " + phaseLabel(m.prevPhase) + ") │"
+	boxBot := "└────────────────────────────────────────────────────┘"
+
+	b.WriteString(boxTop + "\n")
+	b.WriteString(boxMid + "\n")
+	b.WriteString(boxLine + "\n")
+	b.WriteString("│  This will disconnect your SSH session.\n")
+	b.WriteString("│  No card / wallet data is ever stored.\n")
+	b.WriteString(boxLine + "\n")
+	b.WriteString(yesLine + "\n")
+	b.WriteString(noLine + "\n")
+	b.WriteString(boxBot + "\n")
+	b.WriteString(hintBar("y / Enter → Quit", "n / Esc → Stay"))
+
+	// 用 bg 作为底色（简化：直接返回 modal，不叠加到底层）
+	_ = bg
+	return b.String()
+}
+
+func (m Model) updateQuitConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		m.cleanupChat()
+		m.Done = true
+		return m, tea.Quit
+	case "n", "N", "esc":
+		m.phase = m.prevPhase
+		return m, nil
+	}
+	return m, nil
+}
+
+// phaseLabel 把 Phase 转成人眼可读的短标签
+func phaseLabel(p Phase) string {
+	switch p {
+	case PhaseMenu:
+		return "Main Menu"
+	case PhaseWelcome:
+		return "Welcome"
+	case PhaseMyCards:
+		return "My Cards"
+	case PhaseMarket:
+		return "Marketplace"
+	case PhaseListCard:
+		return "List for Sale"
+	case PhaseMintCard:
+		return "Mint Card"
+	case PhaseChat:
+		return "Crew Chat"
+	}
+	return "previous page"
+}
+
+// ═══════════════════════════════════════════════
+//
+//	? 帮助浮层（PhaseHelp）
+//
+// ═══════════════════════════════════════════════
+
+func (m Model) viewHelpOverlay() string {
+	var b strings.Builder
+	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
+	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
+
+	// 顶部标题
+	b.WriteString("\n  " + neon.Render("◆ GEoYUAN  KEYBOARD REFERENCE"))
+	b.WriteString("  " + dim.Render("(press any key or Esc to close)"))
+	b.WriteString("\n\n")
+
+	// 全局（所有页面）
+	b.WriteString("  " + cyan.Render("GLOBAL (any page)") + "\n")
+	b.WriteString("  " + green.Render("?" + strings.Repeat(" ", 14)) + "Toggle this help\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Back to previous / Quit confirm\n")
+	b.WriteString("  " + green.Render("Ctrl+C") + strings.Repeat(" ", 10) + "Force quit\n")
+	b.WriteString("\n")
+
+	// 主菜单
+	b.WriteString("  " + cyan.Render("MAIN MENU") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Navigate options\n")
+	b.WriteString("  " + green.Render("1 - 6") + strings.Repeat(" ", 13) + "Jump directly to item\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Select current\n")
+	b.WriteString("\n")
+
+	// My Cards
+	b.WriteString("  " + cyan.Render("MY CARDS") + "\n")
+	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload from chain\n")
+	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "Find neighbor cards\n")
+	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "List this card for sale\n")
+	b.WriteString("  " + green.Render("↑ / ↓") + strings.Repeat(" ", 10) + "Scroll cards\n")
+	b.WriteString("\n")
+
+	// Marketplace
+	b.WriteString("  " + cyan.Render("MARKETPLACE") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Select listing\n")
+	b.WriteString("  " + green.Render("Enter  or  B") + strings.Repeat(" ", 8) + "Buy selected\n")
+	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "Next / Prev page\n")
+	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload listings\n")
+	b.WriteString("\n")
+
+	// List Card
+	b.WriteString("  " + cyan.Render("LIST CARD FOR SALE") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Pick a card to list\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Confirm listing\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Cancel / go back\n")
+	b.WriteString("\n")
+
+	// Quiz
+	b.WriteString("  " + cyan.Render("QUIZ") + "\n")
+	b.WriteString("  " + green.Render("1 - 4") + strings.Repeat(" ", 13) + "Select answer\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Next question\n")
+	b.WriteString("\n")
+
+	// Chat
+	b.WriteString("  " + cyan.Render("CREW CHAT") + "\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Send message\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Leave chat\n")
+	b.WriteString("\n")
+
+	b.WriteString(dim.Render("  Press any key to close  ·  Enjoy Geoyuan! 🌍"))
+	return b.String()
+}
+
+func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// 任意键关闭帮助浮层，回到之前的页面
+	m.phase = m.prevPhase
+	return m, nil
 }
