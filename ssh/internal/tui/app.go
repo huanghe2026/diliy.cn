@@ -605,22 +605,23 @@ func phaseBadge(p Phase) string {
 func (m Model) headerBar(title string) string {
 	var b strings.Builder
 
-	// 左侧：logo + 面包屑（替代原来的 title 参数）
+	// 1️⃣ 半块高分辨率 GEOYUAN logo（所有 phase 固定在抬头）
+	b.WriteString(RenderGlowLogo())
+
+	// 2️⃣ 紧凑单行 header：◆ geoyuan + 面包屑 + 用户信息
 	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
 	b.WriteString(styleHeader.Render(m.breadcrumb()))
 
-	// 右侧：用户信息
 	right := m.userInfoString()
 	b.WriteString(strings.Repeat(" ", 2))
 	b.WriteString(right)
 
-	// 最右：全局 Esc 返回提示（不在 Menu/Chat 阶段显示）
 	if m.phase != PhaseMenu && m.phase != PhaseChat {
 		b.WriteString(strings.Repeat(" ", 2))
 		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(" Esc←Back"))
 	}
 
-	// 分隔线
+	// 3️⃣ 分隔线
 	b.WriteString("\n" + lipgloss.NewStyle().
 		Foreground(colorBrand).
 		Render(strings.Repeat("━", 80)) + "\n")
@@ -677,15 +678,12 @@ func (m Model) userInfoString() string {
 // ═══════════════════════════════════════════════
 func (m Model) viewRegister() string {
 	var b strings.Builder
-	h := m.termHeight
-	if h == 0 {
-		h = 24
-	}
 
-	// 顶部：大 logo + tagline
-	b.WriteString(RenderGlowLogo())
-	b.WriteString(RenderNeonTagline())
-	b.WriteString("\n")
+	// headerBar 已经带半块 GEOYUAN logo + 紧凑单行 header
+	b.WriteString(m.headerBar(" · Register"))
+
+	// Neon tagline
+	b.WriteString(RenderNeonTagline() + "\n\n")
 
 	// 注册表单卡（带 label + 下划线 + 字数计数 + 校验 hint）
 	name := m.nameInput.Value()
@@ -1208,9 +1206,6 @@ func (m Model) viewWelcome() string {
 
 	var content strings.Builder
 
-	// 🌈 小彩虹 logo
-	content.WriteString(RenderRainbowLogo() + "\n")
-
 	n, _ := m.store.CountApproved()
 	totalAttempts, _ := m.store.CountAttemptsForUser(m.user.ID)
 
@@ -1527,8 +1522,7 @@ func (m Model) viewMenu() string {
 	b.WriteString(m.headerBar(" · Main Menu"))
 	b.WriteString("\n")
 
-	// 大 logo + 欢迎标语
-	b.WriteString(RenderGlowLogo())
+	// 欢迎标语（logo 已由 headerBar 提供）
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true).
 		Render("  ◆ Welcome back, Buddy — pick your mission") + "\n\n")
 

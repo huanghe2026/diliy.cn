@@ -3,11 +3,20 @@
 package tui
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// ── embed 资源 ──
+
+//go:embed assets/geoyuan_logo_halfblock.txt
+var geoyuanLogoHalfblock string
+
+//go:embed assets/geoyuan_logo.png
+var geoyuanLogoPNG []byte
 
 // ═══════════════════════════════════════════════
 //  🎨 主题色板（Neon Cyberpunk）
@@ -125,32 +134,11 @@ func RenderRainbowLogo() string {
 	return RenderGlowLogo()
 }
 
-// RenderGlowLogo 渲染发光版 Geoyuan logo
-// 双层叠加：先画一层暗淡"外发光"背景，再画主彩虹 logo
+// RenderGlowLogo 渲染 Geoyuan logo —— 高分辨率半块 ▀ ANSI
+// 直接返回 Python 生成的带 truecolor escape 的文本
+// G-E-O-Y-U-A-N 彩虹渐变 · 6 行 × 54 cells · 100% 终端兼容
 func RenderGlowLogo() string {
-	lines := strings.Split(strings.TrimLeft(geoyuanLogoBig, "\n"), "\n")
-	var b strings.Builder
-
-	for _, line := range lines {
-		runes := []rune(line)
-		for i, r := range runes {
-			ch := string(r)
-			if r == ' ' || r == '\n' {
-				b.WriteString(ch)
-				continue
-			}
-			idx := i % len(rainbowColors)
-			color := rainbowColors[idx]
-
-			// 用 lipgloss 渲染（单字符前景色 + bold）
-			b.WriteString(lipgloss.NewStyle().
-				Foreground(color).
-				Bold(true).
-				Render(ch))
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
+	return geoyuanLogoHalfblock
 }
 
 // RenderRegisterCard 注册表单卡 — 完整 wizard 样式
