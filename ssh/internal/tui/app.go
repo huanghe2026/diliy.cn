@@ -439,17 +439,26 @@ func (m *Model) enterChat() {
 //	🏗️  Header Bar (所有页面共享)
 //
 // ═══════════════════════════════════════════════
+// headerBar 顶部条：logo + 面包屑 + 用户信息 + 全局返回提示
 func (m Model) headerBar(title string) string {
 	var b strings.Builder
 
-	// 左侧：logo + title
+	// 左侧：logo + 面包屑
 	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
 	b.WriteString(styleHeader.Render("  " + title))
 
-	// 右侧：用户信息 + 在线
+	// 中间：填充到合适位置
+	b.WriteString(strings.Repeat(" ", 2))
+
+	// 右侧：用户信息
 	right := m.userInfoString()
-	b.WriteString(strings.Repeat(" ", 3))
 	b.WriteString(right)
+
+	// 最右：全局 Esc 返回提示（不在 Menu 阶段显示）
+	if m.phase != PhaseMenu && m.phase != PhaseChat {
+		b.WriteString(strings.Repeat(" ", 2))
+		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(" Esc←Menu"))
+	}
 
 	// 分隔线
 	b.WriteString("\n" + lipgloss.NewStyle().
@@ -457,6 +466,15 @@ func (m Model) headerBar(title string) string {
 		Render(strings.Repeat("━", 80)) + "\n")
 
 	return b.String()
+}
+
+// hintBar 底部统一导航提示（所有 View 共用）
+func hintBar(keys ...string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	return "\n" + lipgloss.NewStyle().Foreground(cMuted).Render(
+		strings.Join(keys, "   ·   ")) + "\n"
 }
 
 func (m Model) userInfoString() string {
@@ -1027,7 +1045,7 @@ func renderFancyProgress(cur, total int) string {
 
 // ═══════════════════════════════════════════════
 //
-//	👋 欢迎页（已通过用户）
+//	👋 欢迎页（已通过用户，等用户按 Enter 手动进入主菜单）
 //
 // ═══════════════════════════════════════════════
 func (m Model) viewWelcome() string {
@@ -1055,11 +1073,14 @@ func (m Model) viewWelcome() string {
 	)
 	b.WriteString(styleCardSuccess.Render(userCard))
 
-	// ✨ 即将进入主菜单
+	// ✨ 手动导航提示（不再自动 skip）
 	b.WriteString("\n  " + lipgloss.NewStyle().
 		Foreground(cNeonCyan).
 		Bold(true).
-		Render("⚡  Opening main menu..."))
+		Render("✓  验证通过！按 Enter 进入主菜单"))
+
+	// 底部 hint
+	b.WriteString(hintBar("⏎ Enter → Main Menu", "q / Esc → Exit"))
 
 	return b.String()
 }
@@ -1345,7 +1366,7 @@ func (m Model) viewMenu() string {
 		}
 	}
 
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("245")).
+	b.WriteString("\n" + lipgloss.NewStyle().Foreground(cNeonCyan).
 		Render("  ↑↓/jk navigate · Enter select · q quit") + "\n")
 	return b.String()
 }
@@ -1555,7 +1576,7 @@ func (m Model) viewMyCards() string {
 			b.WriteString("  Press " + cyan.Render("M") + " to find neighbor matches around your first card\n")
 			b.WriteString(fmt.Sprintf("    Center cell: 0x%x (k=%d)\n", first.H3Index, m.neighborK))
 		}
-		b.WriteString(dim.Render("\n  R reload · Esc/← Back · q quit\n"))
+		b.WriteString(hintBar("R reload · M find neighbors · L list this card · Esc/← Back · q quit"))
 	} else {
 		// 邻居匹配结果
 		b.WriteString(neon.Render(fmt.Sprintf("  🧭 Neighbor Match — k=%d around 0x%x", m.neighborK, m.neighborH3)) + "\n\n")
@@ -1582,7 +1603,7 @@ func (m Model) viewMyCards() string {
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString(dim.Render("  Esc/← Back to My Cards · q quit\n"))
+		b.WriteString(hintBar("Esc/← Back to My Cards · q quit"))
 	}
 	return b.String()
 }
@@ -1714,7 +1735,7 @@ func (m Model) viewMarket() string {
 		b.WriteString(dim.Render(fmt.Sprintf("  Page %d/%d", page+1, totalPages)) + "\n")
 	}
 
-	b.WriteString(dim.Render("\n  ↑↓/jk select · B buy · N next page · P prev page · R reload · Esc back\n"))
+	b.WriteString(hintBar("↑↓/jk select · Enter or B buy · N next page · P prev page · R reload · Esc back"))
 	return b.String()
 }
 
@@ -1792,12 +1813,14 @@ func (m Model) viewListCard() string {
 	if m.listCardLoading {
 		b.WriteString(cyan.Render("  ⛓️  Submitting listing to Polygon Amoy...") + "\n")
 		b.WriteString(dim.Render("  (waiting for receipt, 10-60s)") + "\n")
+		b.WriteString(hintBar("waiting..."))
 		return b.String()
 	}
 
 	if m.listCardDone {
 		b.WriteString(green.Render("  ✓ Listing successful!") + "\n\n")
-		b.WriteString(dim.Render("  Your card is now on the marketplace. Press Esc to return.\n"))
+		b.WriteString(dim.Render("  Your card is now on the marketplace."))
+		b.WriteString(hintBar("Esc or Enter → Back to My Cards"))
 		return b.String()
 	}
 
@@ -1805,6 +1828,8 @@ func (m Model) viewListCard() string {
 	b.WriteString(neon.Render("  🃏 Pick a card to list") + "\n\n")
 	if len(m.myCardsCache) == 0 {
 		b.WriteString(red.Render("  ✗ No cards to list. Go mint first.\n"))
+		b.WriteString(hintBar("Esc → Back to My Cards"))
+		return b.String()
 	} else {
 		for i, c := range m.myCardsCache {
 			prefix := "  "
@@ -1822,13 +1847,14 @@ func (m Model) viewListCard() string {
 	// 价格输入
 	if len(m.myCardsCache) > 0 {
 		b.WriteString(cyan.Render("  💰 Set price (MATIC):") + "\n\n")
-		b.WriteString("  " + m.listInput.View() + "\n\n")
-		b.WriteString(dim.Render("  Enter = confirm listing · Esc = cancel · ↑↓ pick card"))
+		b.WriteString("  " + m.listInput.View() + "\n")
 	}
 
 	if m.listCardErr != "" {
 		b.WriteString("\n\n  " + red.Render(m.listCardErr))
 	}
+
+	b.WriteString(hintBar("↑↓ pick card · Enter confirm · Esc cancel"))
 	return b.String()
 }
 
