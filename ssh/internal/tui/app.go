@@ -541,6 +541,70 @@ func (m Model) breadcrumb() string {
 	return "  Home"
 }
 
+// bottomBar 全局底部状态条（phase 徽章 + 钱包 + 链上 + 键位）
+func (m Model) bottomBar() string {
+	dim := lipgloss.NewStyle().Foreground(cMuted)
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
+
+	phaseName := phaseBadge(m.phase)
+
+	// 用户钱包地址（如果有 userID）
+	walletStr := ""
+	if m.user != nil {
+		addr := m.userWalletAddr()
+		if addr != "" && len(addr) > 10 {
+			walletStr = cyan.Render(addr[:6]+"..."+addr[len(addr)-4:])
+		}
+	}
+
+	// 链上状态（简化：直接显示 "Polygon Amoy ✅" 静态）
+	chainBadge := green.Render("✅ Polygon Amoy")
+
+	var b strings.Builder
+	b.WriteString("\n")
+	// 第一行：phase + wallet + chain
+	b.WriteString(dim.Render("  ◆ ") + phaseName + "  ")
+	if walletStr != "" {
+		b.WriteString(dim.Render("🔑 ") + walletStr + "  ")
+	}
+	b.WriteString(chainBadge)
+	b.WriteString("\n")
+	// 第二行：全局键位
+	b.WriteString(dim.Render("  ↑↓←→ Nav · Enter/Num Select · ? Help · Esc Back · Ctrl+C Force Quit"))
+	return b.String()
+}
+
+// phaseBadge 把 Phase 转成简短徽章文本
+func phaseBadge(p Phase) string {
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	switch p {
+	case PhaseRegister:
+		return gold.Render("📝 REGISTER")
+	case PhaseQuiz:
+		return gold.Render("🧠 QUIZ")
+	case PhaseResult:
+		return gold.Render("🏁 RESULT")
+	case PhaseMenu:
+		return gold.Render("🏠 MENU")
+	case PhaseMintCard:
+		return gold.Render("🎴 MINT")
+	case PhaseMyCards:
+		return gold.Render("🃏 MY CARDS")
+	case PhaseMarket:
+		return gold.Render("🛒 MARKET")
+	case PhaseListCard:
+		return gold.Render("📋 LIST FOR SALE")
+	case PhaseChat:
+		return gold.Render("💬 CHAT")
+	case PhaseQuitConfirm:
+		return gold.Render("⚠ QUIT?")
+	case PhaseHelp:
+		return gold.Render("❓ HELP")
+	}
+	return gold.Render("HOME")
+}
+
 // headerBar 顶部条：logo + 面包屑 + 用户信息 + 全局返回提示
 func (m Model) headerBar(title string) string {
 	var b strings.Builder
@@ -1417,43 +1481,153 @@ func (m Model) viewMenu() string {
 	b.WriteString(m.headerBar(" · Main Menu"))
 	b.WriteString("\n")
 
-	// Geoyuan logo (neon rainbow)
-	logo := RenderRainbowLogo()
-	b.WriteString(logo + "\n\n")
+	// 大 logo + 欢迎标语
+	b.WriteString(RenderGlowLogo())
+	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true).
+		Render("  ◆ Welcome back, Buddy — pick your mission") + "\n\n")
 
-	// 主菜单选项
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true).
-		Render("  ◆ Welcome back, Buddy — choose your action:") + "\n\n")
+	// Panel Card 网格：3 列 × 2 行
+	cols := 3
+	padX := 2 // 两个 panel 之间的水平间距
+
+	// 先构建 2 行 panel 网格
+	linesPerCard := 5
+	rows := [][]string{{}, {}} // row 0, row 1 (3 + 3)
 
 	for i, item := range menuItems {
-		prefix := "  "
-		style := lipgloss.NewStyle()
-		if i == m.menuCursor {
-			prefix = m.cursorMarker()
-			style = style.Bold(true).Foreground(lipgloss.Color("45"))
-		} else {
-			style = style.Foreground(lipgloss.Color("245"))
+		row := i / cols
+		if row > 1 {
+			row = 1 // 安全 fallback
 		}
-		b.WriteString(prefix + style.Render(fmt.Sprintf("%s %s", item.icon, item.label)) + "\n")
-		if i == m.menuCursor {
-			b.WriteString("    " + lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render(item.desc) + "\n")
-		}
+		idxInRow := i % cols
+
+		// panel border + 内容
+		selected := i == m.menuCursor
+		panel := renderMenuPanel(item, idxInRow, selected)
+		rows[row] = append(rows[row], panel)
 	}
 
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(cNeonCyan).
-		Render("  ↑↓/jk · 1-6 快捷 · Enter select · ? help · q quit") + "\n")
+	// 拼 panel 网格：逐行，每行把 3 个 panel 水平拼起来
+	for _, row := range rows {
+		var rowLines [][]string // 每 panel 的行
+		for _, panel := range row {
+			rowLines = append(rowLines, strings.Split(panel, "\n"))
+		}
+		for l := 0; l < linesPerCard; l++ {
+			line := ""
+			for pi, panelLines := range rowLines {
+				if pi > 0 {
+					line += strings.Repeat(" ", padX)
+				}
+				if l < len(panelLines) {
+					line += panelLines[l]
+				} else {
+					// 补空格对齐
+					line += strings.Repeat(" ", 28)
+				}
+			}
+			b.WriteString(line + "\n")
+		}
+		b.WriteString("\n") // panel 行之间空一行
+	}
+
+	// 底部键位 hint
+	b.WriteString(m.bottomBar())
 	return b.String()
 }
 
+// renderMenuPanel 渲染单个菜单 panel card
+// idxInRow: 0/1/2 第几个位置，决定数字快捷键 badge
+// selected: 是否当前选中
+func renderMenuPanel(item struct {
+	icon, label, desc string
+}, idxInRow int, selected bool) string {
+	numBadge := lipgloss.NewStyle().Foreground(cMuted).Render(fmt.Sprintf("[%d]", idxInRow+1))
+
+	// 边框颜色 + 背景
+	borderFG := cBorder
+	bg := lipgloss.Color("#1a1a2e")
+	titleColor := cText
+	descColor := cMuted
+	iconStyle := lipgloss.NewStyle().Foreground(cText)
+
+	if selected {
+		borderFG = cNeonCyan
+		titleColor = cNeonCyan
+		descColor = cNeonGreen
+		iconStyle = lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	}
+
+	border := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderFG).
+		Padding(0, 1).
+		Width(28).
+		Background(bg)
+
+	titleS := lipgloss.NewStyle().Foreground(titleColor).Bold(true)
+	descS := lipgloss.NewStyle().Foreground(descColor).Faint(true)
+
+	// panel 内容
+	content := fmt.Sprintf("%s %s\n%s\n%s",
+		iconStyle.Render(item.icon),
+		titleS.Render(truncate(item.label, 20)),
+		"",
+		descS.Render(truncate(item.desc, 24)),
+	)
+	if selected {
+		content = numBadge + "  " + content
+	} else {
+		content = "    " + content
+	}
+
+	// 每 panel 5 行高（border 占 3 行 + padding）
+	return border.Render(content)
+}
+
+func truncate(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
+}
+
 func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	cols := 3
+	rows := (len(menuItems) + cols - 1) / cols
+
 	switch msg.String() {
 	case "up", "k":
-		if m.menuCursor > 0 {
-			m.menuCursor--
+		// 上一行：cursor - cols
+		if m.menuCursor >= cols {
+			m.menuCursor -= cols
+		} else {
+			// 第一行 wrap 到最后一行同列
+			m.menuCursor = m.menuCursor + (rows-1)*cols
+			if m.menuCursor >= len(menuItems) {
+				m.menuCursor = len(menuItems) - 1
+			}
 		}
 	case "down", "j":
+		// 下一行：cursor + cols
+		if m.menuCursor+cols < len(menuItems) {
+			m.menuCursor += cols
+		} else {
+			// 最后一行 wrap 到第一行同列
+			m.menuCursor = m.menuCursor % cols
+		}
+	case "left", "h":
+		if m.menuCursor > 0 {
+			m.menuCursor--
+		} else {
+			m.menuCursor = len(menuItems) - 1
+		}
+	case "right", "l":
 		if m.menuCursor < len(menuItems)-1 {
 			m.menuCursor++
+		} else {
+			m.menuCursor = 0
 		}
 	case "1", "2", "3", "4", "5", "6":
 		// 数字快捷键：直接跳到对应项并自动 Enter 触发
