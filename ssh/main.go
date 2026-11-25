@@ -32,6 +32,7 @@ import (
 	"geoyuan.cn/ssh/internal/questiongen"
 	"geoyuan.cn/ssh/internal/sshserver"
 	"geoyuan.cn/ssh/internal/store"
+	"geoyuan.cn/ssh/internal/wallet"
 )
 
 func main() {
@@ -66,17 +67,17 @@ func main() {
 	// 全局聊天室 Hub
 	chatHub := chat.NewHub()
 
-	// Polygon RPC + GeoyuanCard 服务（可选，连不上 / 无合约 / 无私钥 都只降级为 H3 预览）
-	cardService := initCardService()
+	// Polygon RPC + GeoyuanCard + 用户钱包（可选，缺任何条件都降级为 H3 预览）
+	walletMgr := initWalletManager()
 
-	srv := sshserver.New(st, gen, chatHub, cardService, addr)
+	srv := sshserver.New(st, gen, chatHub, walletMgr, addr)
 	if err := srv.ListenAndServe(filepath.Join(dataDir, "ssh_host_ed25519_key")); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
 }
 
-// initCardService 尝试初始化 chain + card，失败降级为 nil（TUI 会自动走 H3 预览）
-func initCardService() *card.Service {
+// initWalletManager 初始化链上服务 + 用户钱包管理器，失败降级为 nil（TUI 走 H3 预览）
+func initWalletManager() *wallet.Manager {
 	cfg := chain.DefaultConfig()
 	if cfg.ContractAddr == "" {
 		log.Printf("GeoyuanCard 合约地址未配置（GEOYUAN_CONTRACT），链上 Mint 不可用")
@@ -98,12 +99,21 @@ func initCardService() *card.Service {
 		log.Printf("GeoyuanCard 服务初始化失败：%v，降级为 H3 预览", err)
 		return nil
 	}
-	if svc.Ready() {
-		log.Printf("GeoyuanCard 链上 Mint 已就绪 signer=%s", svc.FromAddr())
-	} else {
-		log.Printf("GeoyuanCard 服务已加载但无私钥，链上 Mint 仅返回预览")
+
+	mgr, err := wallet.New(svc, os.Getenv("GEOYUAN_WALLET_SEED"))
+	if err != nil {
+		log.Printf("用户钱包初始化失败：%v，降级为部署钱包代签", err)
+		return nil
 	}
-	return svc
+	if mgr.Ready() {
+		log.Printf("用户独立钱包已启用（BIP44 m/44'/60'/0'/0/{userID}）")
+	} else {
+		log.Printf("⚠️  GEOYUAN_WALLET_SEED 未配置：所有用户共用部署钱包 %s，资产不隔离", svc.FromAddr())
+	}
+	if svc.Ready() {
+		log.Printf("GeoyuanCard 链上 Mint 已就绪 gas-signer=%s", svc.FromAddr())
+	}
+	return mgr
 }
 
 // loadDotEnv — 读取项目根目录的 .env（简单 KEY=VALUE 解析，支持 # 注释）

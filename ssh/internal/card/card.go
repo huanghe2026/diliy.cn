@@ -86,6 +86,15 @@ func New(c *chain.Client, privKeyHex string) (*Service, error) {
 // FromAddr — 返回签名地址（如果有私钥）
 func (s *Service) FromAddr() string { return s.from.Hex() }
 
+// Chain — 底层链客户端（供 wallet 包做 gas 充值）
+func (s *Service) Chain() *chain.Client { return s.chain }
+
+// SignerKey — 部署钱包私钥（供 wallet 包做 gas 充值签名）
+func (s *Service) SignerKey() *ecdsa.PrivateKey { return s.key }
+
+// ContractReady — 合约绑定是否可用（读操作即可用，不需要私钥）
+func (s *Service) ContractReady() bool { return s.gyc != nil }
+
 // ContractAddr — 返回合约地址
 func (s *Service) ContractAddr() common.Address { return s.contract }
 
@@ -121,35 +130,55 @@ type MintResult struct {
 	Preview     bool
 }
 
-// Mint — 优先发链上交易；条件不满足时降级为 H3 预览
+// Mint — 用服务自带（部署）私钥 mint；条件不满足时降级为 H3 预览
 func (s *Service) Mint(p MintParams) (*MintResult, error) {
+	if !s.Ready() {
+		return s.preview(p), nil
+	}
+	return s.MintAs(s.key, p)
+}
+
+// MintAs — 用指定私钥签名 mint（用户独立钱包走这里）
+// 无合约绑定时返回 H3 预览（Preview=true），不报错。
+func (s *Service) MintAs(key *ecdsa.PrivateKey, p MintParams) (*MintResult, error) {
+	if s.gyc == nil || key == nil {
+		return s.preview(p), nil
+	}
 	res := p.Res
 	if res <= 0 {
 		res = h3.DefaultRes
 	}
 	cell := h3.Encode(p.Lat, p.Lon, res)
-
-	if !s.Ready() {
-		return &MintResult{
-			TokenID:     big.NewInt(0),
-			H3Index:     cell.Index,
-			TxHash:      "(offline preview)",
-			Lat:         cell.Lat,
-			Lon:         cell.Lon,
-			Res:         res,
-			Title:       p.Title,
-			Description: p.Description,
-			Color:       p.Color,
-			Preview:     true,
-		}, nil
-	}
-	return s.mintOnChain(cell.Index, p, cell.Lat, cell.Lon, res)
+	return s.mintOnChain(key, cell.Index, p, cell.Lat, cell.Lon, res)
 }
 
-// mintOnChain — 用 abigen 绑定发真实链上 Mint 交易
-func (s *Service) mintOnChain(h3Index uint64, p MintParams, lat, lon float64, res int) (*MintResult, error) {
+// preview — 离线 H3 预览结果
+func (s *Service) preview(p MintParams) *MintResult {
+	res := p.Res
+	if res <= 0 {
+		res = h3.DefaultRes
+	}
+	cell := h3.Encode(p.Lat, p.Lon, res)
+	return &MintResult{
+		TokenID:     big.NewInt(0),
+		H3Index:     cell.Index,
+		TxHash:      "(offline preview)",
+		Lat:         cell.Lat,
+		Lon:         cell.Lon,
+		Res:         res,
+		Title:       p.Title,
+		Description: p.Description,
+		Color:       p.Color,
+		Preview:     true,
+	}
+}
+
+// mintOnChain — 用指定私钥发真实链上 Mint 交易
+func (s *Service) mintOnChain(key *ecdsa.PrivateKey, h3Index uint64, p MintParams, lat, lon float64, res int) (*MintResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
 
 	// 先查 cell 是否已被 mint（快速失败，省 gas）
 	isMinted, existingID, err := s.gyc.IsCellMinted(&bind.CallOpts{Context: ctx}, h3Index)
@@ -161,16 +190,16 @@ func (s *Service) mintOnChain(h3Index uint64, p MintParams, lat, lon float64, re
 	}
 
 	chainID := s.chain.ChainID()
-	opts, err := bind.NewKeyedTransactorWithChainID(s.key, big.NewInt(chainID))
+	opts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(chainID))
 	if err != nil {
 		return nil, fmt.Errorf("transactor: %w", err)
 	}
-	nonce, err := s.chain.Nonce(s.from.Hex())
+	nonce, err := s.chain.Nonce(from.Hex())
 	if err != nil {
 		return nil, fmt.Errorf("nonce: %w", err)
 	}
 	opts.Nonce = big.NewInt(int64(nonce))
-	opts.GasLimit = 600_000 // Mint 实测 ~137k，留足余量
+	opts.GasLimit = 700_000 // 实测 400-550k（字符串 SSTORE 占大头），留足余量
 	opts.Context = ctx
 
 	latE4 := int32(lat * 10000)

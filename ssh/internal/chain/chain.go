@@ -88,18 +88,23 @@ func (c *Client) GasPrice() (*big.Int, error) {
 
 // Balance — 地址 MATIC 余额 (wei → MATIC)
 func (c *Client) Balance(addrHex string) (float64, error) {
-	addr := common.HexToAddress(addrHex)
-	wei, err := withRetry(func() (*big.Int, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return c.eth.BalanceAt(ctx, addr, nil)
-	})
+	wei, err := c.BalanceWei(addrHex)
 	if err != nil {
 		return 0, err
 	}
 	matic := new(big.Float).Quo(new(big.Float).SetInt(wei), big.NewFloat(1e18))
 	f, _ := matic.Float64()
 	return f, nil
+}
+
+// BalanceWei — 地址余额（wei 原值，避免浮点误差）
+func (c *Client) BalanceWei(addrHex string) (*big.Int, error) {
+	addr := common.HexToAddress(addrHex)
+	return withRetry(func() (*big.Int, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return c.eth.BalanceAt(ctx, addr, nil)
+	})
 }
 
 // Nonce — 下一个交易 nonce（pending）

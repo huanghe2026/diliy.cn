@@ -15,8 +15,10 @@ import (
 
 // PhaseMint — Bubble Tea Mint 视图
 type PhaseMint struct {
-	cardService *card.Service
-	step        int // 0=H3预览 1=标题 2=描述 3=颜色 4=确认 5=处理中/完成 99=退出
+	mintFn      func(card.MintParams) (*card.MintResult, error)
+	ready       bool   // 链上 mint 是否可用
+	walletAddr  string // 当前用户的钱包地址
+	step        int    // 0=H3预览 1=标题 2=描述 3=颜色 4=确认 5=处理中/完成 99=退出
 	titleIn     textinput.Model
 	descIn      textinput.Model
 	colorIn     textinput.Model
@@ -32,8 +34,9 @@ type PhaseMint struct {
 }
 
 // NewPhaseMint — 初始化 Mint 视图（自动用 IP 做 H3 预览）
-func NewPhaseMint(svc *card.Service, remoteIP, geoLoc string) PhaseMint {
-	pm := PhaseMint{cardService: svc, res: h3.DefaultRes}
+// mintFn 由上层注入（绑定到当前用户的钱包），ready 表示链上可用，walletAddr 用于展示。
+func NewPhaseMint(mintFn func(card.MintParams) (*card.MintResult, error), ready bool, walletAddr, remoteIP, geoLoc string) PhaseMint {
+	pm := PhaseMint{mintFn: mintFn, ready: ready, walletAddr: walletAddr, res: h3.DefaultRes}
 
 	// 从 IP 拿经纬度，拿不到降级杭州
 	lat, lon := geo.LatLonFromIP(remoteIP)
@@ -191,12 +194,12 @@ func (p PhaseMint) doMintCmd() tea.Cmd {
 		Description: p.desc,
 		Color:       p.color,
 	}
-	svc := p.cardService
+	svc := p.mintFn
 	return func() tea.Msg {
 		if svc == nil {
 			return mintResultMsg{err: fmt.Errorf("GeoyuanCard 服务不可用（chain 未连接），降级为 H3 预览")}
 		}
-		result, err := svc.Mint(params)
+		result, err := svc(params)
 		return mintResultMsg{result: result, err: err}
 	}
 }
@@ -217,6 +220,9 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 	switch p.step {
 	case 0:
 		sb.WriteString(fmt.Sprintf("  📍 Your location:  %s\n", geoLoc))
+		if p.walletAddr != "" {
+			sb.WriteString(fmt.Sprintf("  👛 Your wallet:    %s\n", p.walletAddr))
+		}
 		sb.WriteString(fmt.Sprintf("  🔷 H3 cell:        %s  (res=%d, ~%.1f km²)\n",
 			H3Hex(p.h3Index), p.res, h3.AreaKm2(p.h3Index)))
 		sb.WriteString(fmt.Sprintf("  📏 Center:          %.4f°N, %.4f°E\n", p.lat, p.lon))
@@ -259,7 +265,10 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 		sb.WriteString(fmt.Sprintf("    Location:  %s\n", geoLoc))
 		sb.WriteString(fmt.Sprintf("    H3 Cell:   %s (res=%d)\n", H3Hex(p.h3Index), p.res))
 		sb.WriteString(fmt.Sprintf("    Lat/Lon:   %.4f, %.4f\n", p.lat, p.lon))
-		if p.cardService != nil && p.cardService.Ready() {
+		if p.walletAddr != "" {
+			sb.WriteString(fmt.Sprintf("    Wallet:    %s\n", p.walletAddr))
+		}
+		if p.ready {
 			sb.WriteString("    Chain:     " + green.Render("Polygon Amoy (live)") + "\n")
 		} else {
 			sb.WriteString("    Chain:     " + yellow.Render("offline preview") + "\n")

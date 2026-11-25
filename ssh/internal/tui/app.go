@@ -24,6 +24,7 @@ import (
 	"geoyuan.cn/ssh/internal/questiongen"
 	"geoyuan.cn/ssh/internal/questions"
 	"geoyuan.cn/ssh/internal/store"
+	"geoyuan.cn/ssh/internal/wallet"
 )
 
 // PassThreshold 通过阈值
@@ -100,9 +101,11 @@ type Model struct {
 	chatInput textinput.Model
 
 	// 🎴 Mint — GeoyuanCard 铸造视图
-	mintView    PhaseMint
-	menuCursor  int           // 主菜单当前选中项
-	cardService *card.Service // Polygon GeoyuanCard 链上服务（nil 时只做 H3 预览）
+	mintView   PhaseMint
+	menuCursor int // 主菜单当前选中项
+
+	cardService *card.Service   // 只读服务（MyCards / NeighborMatch）
+	walletMgr   *wallet.Manager // 用户独立钱包（mint 签名 + gas）
 
 	// 🃏 MyCards / 邻居匹配
 	myCardsCache    []card.Card
@@ -124,14 +127,19 @@ type Model struct {
 }
 
 // New 构造 TUI Model
-func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User, chatHub *chat.Hub, cardService *card.Service, ip, host, geo string) Model {
+func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User, chatHub *chat.Hub, walletMgr *wallet.Manager, ip, host, geo string) Model {
+	var svc *card.Service
+	if walletMgr != nil {
+		svc = walletMgr.Service()
+	}
 	m := Model{
 		store:       s,
 		generator:   gen,
 		fp:          fp,
 		user:        user,
 		ChatHub:     chatHub,
-		cardService: cardService,
+		cardService: svc,
+		walletMgr:   walletMgr,
 		remoteIP:    ip,
 		remoteHost:  host,
 		geoLoc:      geo,
@@ -139,6 +147,7 @@ func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User
 	switch {
 	case user != nil && user.Status == store.StatusApproved:
 		m.phase = PhaseWelcome
+		m.enterChat()
 	case user != nil:
 		m.phase = PhaseRetry
 	default:
@@ -1264,7 +1273,7 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		switch m.menuCursor {
 		case 0: // Mint
-			m.mintView = NewPhaseMint(m.cardService, m.remoteIP, m.geoLoc)
+			m.mintView = NewPhaseMint(m.mintFn(), m.chainReady(), m.userWalletAddr(), m.remoteIP, m.geoLoc)
 			m.phase = PhaseMintCard
 			return m, nil
 		case 1: // My Cards
@@ -1315,9 +1324,9 @@ func (m Model) updateMint(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // ═══════════════════════════════════════════════
 func (m Model) loadMyCardsCmd() tea.Cmd {
 	svc := m.cardService
-	addr := "0x0000000000000000000000000000000000000000"
-	if svc != nil {
-		addr = svc.FromAddr()
+	addr := m.userWalletAddr()
+	if addr == "" {
+		addr = "0x0000000000000000000000000000000000000000"
 	}
 	return func() tea.Msg {
 		if svc == nil {
@@ -1333,9 +1342,9 @@ func (m Model) loadMyCardsCmd() tea.Cmd {
 
 func (m Model) loadNeighborCmd(h3Index uint64, k int) tea.Cmd {
 	svc := m.cardService
-	addr := "0x0000000000000000000000000000000000000000"
-	if svc != nil {
-		addr = svc.FromAddr()
+	addr := m.userWalletAddr()
+	if addr == "" {
+		addr = "0x0000000000000000000000000000000000000000"
 	}
 	return func() tea.Msg {
 		if svc == nil {
@@ -1347,6 +1356,40 @@ func (m Model) loadNeighborCmd(h3Index uint64, k int) tea.Cmd {
 		}
 		return neighborLoadedMsg{cards: cards}
 	}
+}
+
+// userWalletAddr — 当前用户的钱包地址（每次按需计算，redeem/注册后会变化）
+// 未启用用户独立钱包时回退到部署钱包地址。
+func (m Model) userWalletAddr() string {
+	if m.walletMgr != nil && m.user != nil && m.user.ID > 0 {
+		if a := m.walletMgr.AddressFor(m.user.ID); a != "" {
+			return a
+		}
+	}
+	if m.cardService != nil {
+		return m.cardService.FromAddr()
+	}
+	return ""
+}
+
+// mintFn — 返回绑定到当前用户钱包的 mint 函数
+func (m Model) mintFn() func(card.MintParams) (*card.MintResult, error) {
+	mgr := m.walletMgr
+	uid := int64(0)
+	if m.user != nil {
+		uid = m.user.ID
+	}
+	return func(p card.MintParams) (*card.MintResult, error) {
+		if mgr == nil {
+			return nil, fmt.Errorf("链上服务不可用")
+		}
+		return mgr.Mint(uid, p)
+	}
+}
+
+// chainReady — 链上 mint 是否可用
+func (m Model) chainReady() bool {
+	return m.walletMgr != nil && m.walletMgr.Ready()
 }
 
 func (m Model) viewMyCards() string {
@@ -1373,11 +1416,15 @@ func (m Model) viewMyCards() string {
 	if !m.showNeighbors {
 		// 我的卡片列表
 		b.WriteString(neon.Render("  🃏 Your Geoyuan Cards") + "\n")
-		if m.cardService != nil && m.cardService.Ready() {
-			b.WriteString(green.Render("  ✓ Connected to Polygon Amoy") + "\n\n")
+		if m.chainReady() {
+			b.WriteString(green.Render("  ✓ Connected to Polygon Amoy") + "\n")
 		} else {
-			b.WriteString(dim.Render("  (chain not ready — showing cache only)\n\n"))
+			b.WriteString(dim.Render("  (chain not ready — showing cache only)") + "\n")
 		}
+		if wa := m.userWalletAddr(); wa != "" {
+			b.WriteString(dim.Render("  👛 Wallet: "+wa) + "\n")
+		}
+		b.WriteString("\n")
 
 		if len(m.myCardsCache) == 0 {
 			b.WriteString(dim.Render("  📭 You don't own any cards yet.\n"))
