@@ -1433,7 +1433,7 @@ func (m Model) viewMenu() string {
 	}
 
 	b.WriteString("\n" + lipgloss.NewStyle().Foreground(cNeonCyan).
-		Render("  ↑↓/jk navigate · Enter select · q quit") + "\n")
+		Render("  ↑↓/jk · 1-6 快捷 · Enter select · ? help · q quit") + "\n")
 	return b.String()
 }
 
@@ -1447,38 +1447,53 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuCursor < len(menuItems)-1 {
 			m.menuCursor++
 		}
-	case "enter", " ":
-		switch m.menuCursor {
-		case 0: // Mint
-			m.mintView = NewPhaseMint(m.mintFn(), m.chainReady(), m.userWalletAddr(), m.remoteIP, m.geoLoc)
-			m.phase = PhaseMintCard
-			return m, nil
-		case 1: // My Cards
-			m.myCardsLoading = true
-			m.myCardsErr = nil
-			m.showNeighbors = false
-			m.phase = PhaseMyCards
-			return m, m.loadMyCardsCmd()
-		case 2: // Marketplace
-			m.marketLoading = true
-			m.marketErr = ""
-			m.marketOffset = 0
-			m.marketListingSel = 0
-			m.phase = PhaseMarket
-			return m, m.loadMarketCmd()
-		case 3: // Crew Chat
-			m.enterChat()
-			return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
-		case 4: // geoyuan.com — 显示 URL 后退出
-			fmt.Print("\n  🌐 Visit https://www.geoyuan.com/\n\n")
-			m.Done = true
-			return m, tea.Quit
-		case 5: // Exit
-			m.cleanupChat()
-			m.Done = true
-			return m, tea.Quit
+	case "1", "2", "3", "4", "5", "6":
+		// 数字快捷键：直接跳到对应项并自动 Enter 触发
+		idx, _ := strconv.Atoi(msg.String())
+		if idx >= 1 && idx <= len(menuItems) {
+			m.menuCursor = idx - 1
+			// 自动执行和 Enter 一样的跳转逻辑
+			return m.enterMenuSelection()
 		}
+	case "enter", " ":
+		return m.enterMenuSelection()
 	case "q", "esc":
+		m.cleanupChat()
+		m.Done = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// enterMenuSelection 执行主菜单当前选中项的跳转
+// （数字快捷键 1-6 也走这里，抽出来避免 switch 重复）
+func (m Model) enterMenuSelection() (tea.Model, tea.Cmd) {
+	switch m.menuCursor {
+	case 0: // 1 → Mint
+		m.mintView = NewPhaseMint(m.mintFn(), m.chainReady(), m.userWalletAddr(), m.remoteIP, m.geoLoc)
+		m.phase = PhaseMintCard
+		return m, nil
+	case 1: // 2 → My Cards
+		m.myCardsLoading = true
+		m.myCardsErr = nil
+		m.showNeighbors = false
+		m.phase = PhaseMyCards
+		return m, m.loadMyCardsCmd()
+	case 2: // 3 → Marketplace
+		m.marketLoading = true
+		m.marketErr = ""
+		m.marketOffset = 0
+		m.marketListingSel = 0
+		m.phase = PhaseMarket
+		return m, m.loadMarketCmd()
+	case 3: // 4 → Crew Chat
+		m.enterChat()
+		return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
+	case 4: // 5 → geoyuan.com — 显示 URL 后退出
+		fmt.Print("\n  🌐 Visit https://www.geoyuan.com/\n\n")
+		m.Done = true
+		return m, tea.Quit
+	case 5: // 6 → Exit
 		m.cleanupChat()
 		m.Done = true
 		return m, tea.Quit
