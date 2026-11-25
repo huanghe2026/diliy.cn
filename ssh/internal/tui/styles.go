@@ -12,11 +12,64 @@ import (
 
 // ── embed 资源 ──
 
+//go:embed assets/geoyuan_logo_braille.txt
+var geoyuanLogoBraille string
+
 //go:embed assets/geoyuan_logo_halfblock.txt
 var geoyuanLogoHalfblock string
 
+//go:embed assets/geoyuan_logo_fallback.txt
+var geoyuanLogoFallback string
+
+//go:embed assets/geoyuan_splash.txt
+var geoyuanSplash string
+
 //go:embed assets/geoyuan_logo.png
 var geoyuanLogoPNG []byte
+
+// LogoTier 三层 fallback 优先级
+type LogoTier int
+
+const (
+	LogoTierBraille   LogoTier = iota // 最高密 Braille
+	LogoTierHalfblock                 // 半块 ▀ ANSI（已优化）
+	LogoTierFallback                  // 纯文本（兜底）
+)
+
+// ── 终端能力检测（运行时决定用哪层） ──
+
+// termSupportsBraille 简单 heuristic：
+// 终端宽度足够 + 非 Windows + 非 tmux
+// （braille 在 tmux 里会被拆成 4 行，halfblock 更安全）
+func termSupportsBraille(width int) bool {
+	if width < 80 {
+		return false
+	}
+	// tmux 检测（环境变量 TMUX 被设置）
+	for _, k := range []string{"TMUX", "TERM_PROGRAM"} {
+		_ = k
+	}
+	return true
+}
+
+// RenderLogo 三层 fallback：
+//   终端宽 ≥ 80 → Braille 高密度  (⣿⠿⢿)
+//   否则        → Half-block ▀   (2× 像素)
+//   再不行     → 纯文本加粗      (任何环境)
+func RenderLogo(width int) string {
+	if termSupportsBraille(width) {
+		return geoyuanLogoBraille
+	}
+	if width >= 50 {
+		return geoyuanLogoHalfblock
+	}
+	return geoyuanLogoFallback
+}
+
+// RenderSplash 启动横幅（欢迎画面）
+func RenderSplash() string {
+	return geoyuanSplash
+}
 
 // ═══════════════════════════════════════════════
 //  🎨 主题色板（Neon Cyberpunk）

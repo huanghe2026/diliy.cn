@@ -605,8 +605,8 @@ func phaseBadge(p Phase) string {
 func (m Model) headerBar(title string) string {
 	var b strings.Builder
 
-	// 1️⃣ 半块高分辨率 GEOYUAN logo（所有 phase 固定在抬头）
-	b.WriteString(RenderGlowLogo())
+	// 1️⃣ 三层 fallback logo（Braille → Halfblock → Fallback，按终端宽度自动选）
+	b.WriteString(RenderLogo(m.termWidth))
 
 	// 2️⃣ 紧凑单行 header：◆ geoyuan + 面包屑 + 用户信息
 	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
@@ -679,11 +679,11 @@ func (m Model) userInfoString() string {
 func (m Model) viewRegister() string {
 	var b strings.Builder
 
-	// headerBar 已经带半块 GEOYUAN logo + 紧凑单行 header
+	// headerBar 已带三层 fallback logo + 紧凑单行 header
 	b.WriteString(m.headerBar(" · Register"))
 
-	// Neon tagline
-	b.WriteString(RenderNeonTagline() + "\n\n")
+	// 启动欢迎 splash 横幅（Register 页独有的开场）
+	b.WriteString("\n" + RenderSplash() + "\n\n")
 
 	// 注册表单卡（带 label + 下划线 + 字数计数 + 校验 hint）
 	name := m.nameInput.Value()
