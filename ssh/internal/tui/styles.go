@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ── embed 资源 ──
@@ -54,70 +55,148 @@ const (
 
 // ── 终端能力检测（运行时决定用哪层） ──
 
-// termSupportsBraille 简单 heuristic：
-// 终端宽度足够 + 非 Windows + 非 tmux
-// （braille 在 tmux 里会被拆成 4 行，halfblock 更安全）
+// displayWidth uses the same ANSI/grapheme-aware measurement as Lip Gloss.
+func displayWidth(s string) int {
+	return ansi.StringWidth(s)
+}
+
 func termSupportsBraille(width int) bool {
-	if width < 80 {
-		return false
-	}
-	// tmux 检测（环境变量 TMUX 被设置）
-	for _, k := range []string{"TMUX", "TERM_PROGRAM"} {
-		_ = k
-	}
-	return true
+	return width >= brailleLogoMinWidth && maxLogoWidth(geoyuanLogoBraille)+logoWidthMargin <= width
 }
 
-// RenderLogo 三层 fallback：
-//   终端宽 ≥ 80 → Braille 高密度  (⣿⠿⢿)
-//   否则        → Half-block ▀   (2× 像素)
-//   再不行     → 纯文本加粗      (任何环境)
+func trimLogoLine(line string) string {
+	visible := strings.TrimRight(ansi.Strip(line), " ")
+	if visible == "" {
+		return ""
+	}
+	return ansi.Cut(line, 0, displayWidth(visible))
+}
+
+func stripLogoTrailingSpace(logo string) string {
+	var b strings.Builder
+	for _, rawLine := range strings.Split(logo, "\n") {
+		line := trimLogoLine(rawLine)
+		if line != "" {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+const (
+	brailleLogoMinWidth = 150
+	logoWidthMargin      = 2
+)
+
+// RenderLogo picks the richest complete asset that fits the terminal width.
 func RenderLogo(width int) string {
-	if termSupportsBraille(width) {
-		return geoyuanLogoBraille
+	if width <= 0 {
+		return ""
 	}
-	if width >= 50 {
-		return geoyuanLogoHalfblock
+
+	tiers := []struct {
+		minWidth int
+		art      string
+	}{
+		{brailleLogoMinWidth, geoyuanLogoBraille},
+		{0, geoyuanLogoHalfblock},
+		{0, geoyuanLogoFallback},
 	}
-	return geoyuanLogoFallback
+	for _, tier := range tiers {
+		if width < tier.minWidth || maxLogoWidth(tier.art)+logoWidthMargin > width {
+			continue
+		}
+		return centerLogo(tier.art, width)
+	}
+	return renderCompactLogo(width)
+}
+
+func maxLogoWidth(logo string) int {
+	width := 0
+	for _, line := range strings.Split(logo, "\n") {
+		if w := displayWidth(line); w > width {
+			width = w
+		}
+	}
+	return width
+}
+
+func centerLogo(logo string, termWidth int) string {
+	if termWidth <= 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	for _, raw := range strings.Split(logo, "\n") {
+		line := trimLogoLine(raw)
+		if line == "" {
+			continue
+		}
+		lineWidth := displayWidth(line)
+		if lineWidth > termWidth {
+			line = ansi.Truncate(line, termWidth, "")
+			lineWidth = displayWidth(line)
+		}
+		if lineWidth == 0 {
+			continue
+		}
+		padding := (termWidth - lineWidth) / 2
+		b.WriteString(strings.Repeat(" ", padding))
+		b.WriteString(line)
+		b.WriteString("\x1b[0m\n")
+	}
+	return b.String()
+}
+
+func renderCompactLogo(width int) string {
+	text := "GEOYUAN"
+	if width < displayWidth(text) {
+		text = "GY"
+		if width < displayWidth(text) {
+			text = "G"
+		}
+	}
+	return centerLogo(RainbowText(text), width)
 }
 
 // ═══════════════════════════════════════════════
-//  🎨 主题色板（Neon Cyberpunk）
+//  🎨 主题色板（Earth-Tone · Geoyuan 地理主题）
 // ═══════════════════════════════════════════════
+// 地形绿 → 地质橙 → 矿物金 → 森林翠 → 河流青 → 海洋蓝 → 深海蓝
 // 全部用 truecolor hex，fallback 256 色
 var (
-	// Neon primary
-	cNeonPurple = lipgloss.Color("#c77dff")  // 主品牌紫
-	cNeonPink   = lipgloss.Color("#ff6ec7")  // 霓虹粉
-	cNeonCyan   = lipgloss.Color("#00f5ff")  // 霓虹青
-	cNeonGreen  = lipgloss.Color("#00ff9d")  // 霓虹绿
-	cNeonGold   = lipgloss.Color("#ffd700")  // 霓虹金
-	cNeonRed    = lipgloss.Color("#ff3864")  // 霓虹红
+	// Earth primary
+	cNeonPurple = lipgloss.Color("#3b82f6")  // 主品牌蓝（海洋）
+	cNeonPink   = lipgloss.Color("#1d4ed8")  // 深海蓝（原霓虹粉）
+	cNeonCyan   = lipgloss.Color("#06b6d4")  // 河流青
+	cNeonGreen  = lipgloss.Color("#22c55e")  // 地形绿
+	cNeonGold   = lipgloss.Color("#f59e0b")  // 矿物金
+	cNeonRed    = lipgloss.Color("#ef4444")  // 警示红
 
 	// Neutrals (dark terminal friendly)
-	cText    = lipgloss.Color("#e0e0e0")
-	cMuted   = lipgloss.Color("#8b8b8b")
-	cDim     = lipgloss.Color("#555555")
-	cBorder  = lipgloss.Color("#4a4a6a")
-	cSurface = lipgloss.Color("#1a1a2e")
+	cText    = lipgloss.Color("#e2e8f0")  // slate-200
+	cMuted   = lipgloss.Color("#94a3b8")  // slate-400
+	cDim     = lipgloss.Color("#64748b")  // slate-500
+	cBorder  = lipgloss.Color("#475569")  // slate-600
+	cSurface = lipgloss.Color("#1e293b")  // slate-800
 )
 
 // ═══════════════════════════════════════════════
 //  🌈 Geoyuan ASCII Logo — 3 种风格 + 彩虹渐变
 // ═══════════════════════════════════════════════
 
-// geoyuanLogoBig 主 logo — 7 行高 × 每字母 6 宽 BLOCK 像素字
-// 纯 ██ 方块字符，G-E-O-Y-U-A-N 每个字母清晰可辨
-// 每行统一 ~54 字符，彩虹渲染后发光
+// geoyuanLogoBig 主 logo — 7 行高 × 56 列宽
+// 100% 纯 ASCII（# + 空格）— 任何字体、任何终端下绝对显示一致
+// （Braille / Halfblock 在某些字体下宽度渲染不一致 → 已弃用）
 const geoyuanLogoBig = `
- ██████  ██████  ██████  ██   ██ ██   ██ ██████  ██   ██
- ██      ██   ██ ██   ██ ██   ██ ██   ██ ██   ██ ██   ██
- ██ ████ ██████  ██████  ██   ██ ██   ██ ██████  ██ █ ██
- ██  ██  ██   ██ ██   ██ ██ █ ██ ██   ██ ██   ██ ███ ███
- ██████  ██████  ██████   ███ ███ ██████ ██   ██ ██   ██
-     ██  ██                   ██      ██       ██   ██
-  ██████ ██████  ██████      ██      ██    ██████ ██████
+######  ######  ######  ##   ## ##   ## ######  ##   ##
+ ##      ##   ## ##   ## ##   ## ##   ## ##   ## ##   ##
+ ## #### ######  ######  ##   ## ##   ## ######  ## # ##
+ ##  ##  ##   ## ##   ## ## # ## ##   ## ##   ## ### ###
+ ######  ######  ######   ### ### ###### ##   ## ##   ##
+     ##  ##                   ##      ##       ##   ##
+  ###### ######  ######      ##      ##    ###### ######
 `
 
 // geoyuanLogoDohone 备选 — Dohone 风格下划线大字
@@ -145,16 +224,16 @@ const neonTagline = `
     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 `
 
-// rainbowColors 彩虹色带（红→粉→紫→青→绿→金→红 循环）
+// rainbowColors 大地色带（绿→橙→金→翠→青→蓝→深海 循环）
 var rainbowColors = []lipgloss.Color{
-	lipgloss.Color("#ff3864"), // 红
-	lipgloss.Color("#ff6ec7"), // 粉
-	lipgloss.Color("#c77dff"), // 紫
-	lipgloss.Color("#00f5ff"), // 青
-	lipgloss.Color("#00ff9d"), // 绿
-	lipgloss.Color("#ffd700"), // 金
-	lipgloss.Color("#ff3864"), // 红 (循环)
-	lipgloss.Color("#ff6ec7"), // 粉
+	lipgloss.Color("#22c55e"), // 地形绿
+	lipgloss.Color("#f97316"), // 地质橙
+	lipgloss.Color("#f59e0b"), // 矿物金
+	lipgloss.Color("#10b981"), // 森林翠
+	lipgloss.Color("#06b6d4"), // 河流青
+	lipgloss.Color("#3b82f6"), // 海洋蓝
+	lipgloss.Color("#1d4ed8"), // 深海蓝
+	lipgloss.Color("#22c55e"), // 地形绿(循环)
 }
 
 // ═══════════════════════════════════════════════
@@ -198,9 +277,7 @@ func RenderRainbowLogo() string {
 	return RenderGlowLogo()
 }
 
-// RenderGlowLogo 渲染 Geoyuan logo —— 高分辨率半块 ▀ ANSI
-// 直接返回 Python 生成的带 truecolor escape 的文本
-// G-E-O-Y-U-A-N 彩虹渐变 · 6 行 × 54 cells · 100% 终端兼容
+// RenderGlowLogo 渲染嵌入式 GEOYUAN ANSI 像素字。
 func RenderGlowLogo() string {
 	return geoyuanLogoHalfblock
 }
@@ -350,69 +427,99 @@ func RenderWelcomeCard() string {
 
 // padTo 把字符串（可能含 ANSI 序列）填充到指定显示宽度
 func padTo(s string, width int) string {
-	// 粗略估计 ANSI 序列长度 — 去掉 \x1b[...m 和 lipgloss 输出
-	ansiStripped := stripANSI(s)
-	if len(ansiStripped) >= width {
-		return s
+	if padding := width - displayWidth(s); padding > 0 {
+		return s + strings.Repeat(" ", padding)
 	}
-	return s + strings.Repeat(" ", width-len(ansiStripped))
+	return s
 }
 
-// stripANSI 去掉 ANSI 转义序列（简单版）
+// adaptiveCardWidth 响应式卡片宽度 — 按 termWidth 取 min(72, termWidth-10)
+// -4 滚动条安全余量 + -2 左右各 2 列 padding
+// 兜底 40 保证窄终端不崩
+func adaptiveCardWidth(termWidth int) int {
+	w := termWidth - 10
+	if w > 72 {
+		return 72
+	}
+	if w < 40 {
+		return 40
+	}
+	return w
+}
+
+// stripANSI 去掉 ANSI 转义序列。
 func stripANSI(s string) string {
-	var b strings.Builder
-	inEscape := false
-	for _, r := range s {
-		if r == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return ansi.Strip(s)
 }
 
-// RenderCongratsPass 通过恭喜画面
+// RenderCongratsPass 🏆 Geoyuan 专属通过画面 — 霓虹赛博风
 func RenderCongratsPass(score, total int) string {
-	arts := []string{
-		`
-  ╔═══════════════════════════════════════════════════════════╗
-  ║                                                           ║
-  ║   ✨   🎉   🌟   CONGRATULATIONS  🌟   🎉   ✨             ║
-  ║                                                           ║
-  ║         You've been promoted to                            ║
-  ║                                                           ║
-  ║          ╔══════════════════╗                             ║
-  ║          ║  Geoyuan MEMBER  ║                             ║
-  ║          ╚══════════════════╝                             ║
-  ║                                                           ║
-  ║     Score: %d / %d   ✓   ✓   ✓                             ║
-  ║                                                           ║
-  ╚═══════════════════════════════════════════════════════════╝
-`,
-	}
-	return fmt.Sprintf(arts[0], score, total)
+	card := fmt.Sprintf(`
+  ╔═══════════════════════════════════════════════════════════════════╗
+  ║  ✨   🎉   🌟   🏅  MISSION COMPLETE  🏅   🌟   🎉   ✨             ║
+  ║                                                                   ║
+  ║    🌍  Geoyuan 准入认证通过                                        ║
+  ║    ✅  30/30  AI 题库 · 区块链存证                                ║
+  ║                                                                   ║
+  ║    ┌─────────────────────────────────────────────────────────┐    ║
+  ║    │  🎴  Mint 专属 Geo-Card  ·  绑定经纬度 ·  Polygon 链上   │    ║
+  ║    │  💬  私密聊天室解锁      ·  全网 geo-peer 匹配          │    ║
+  ║    │  💰  Marketplace 挂售     ·  链上 P2P 交易              │    ║
+  ║    └─────────────────────────────────────────────────────────┘    ║
+  ║                                                                   ║
+  ║    Score: %d / %d   (%d%%)   ⚡   Pass ≥ %d                       ║
+  ║                                                                   ║
+  ║    ┌─ 下一步 ─────────────────────────────────────────────────┐   ║
+  ║    │  ⏎  进入主菜单  ·  1 → Mint  ·  2 → Chat  ·  3 → Market │   ║
+  ║    └──────────────────────────────────────────────────────────┘   ║
+  ╚═══════════════════════════════════════════════════════════════════╝
+`, score, total, score*100/total, PassThreshold)
+
+	// 霓虹色渲染
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	purple := lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true)
+	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
+	pink := lipgloss.NewStyle().Foreground(cNeonPink).Bold(true)
+
+	// 关键词着色
+	card = strings.ReplaceAll(card, "MISSION COMPLETE", pink.Render("MISSION COMPLETE"))
+	card = strings.ReplaceAll(card, "Geoyuan", purple.Render("Geoyuan"))
+	card = strings.ReplaceAll(card, "Score:", green.Render("Score:"))
+	card = strings.ReplaceAll(card, "下一步", cyan.Render("下一步"))
+	card = strings.ReplaceAll(card, "🎴 Mint", gold.Render("🎴 Mint"))
+	card = strings.ReplaceAll(card, "💬", cyan.Render("💬"))
+	card = strings.ReplaceAll(card, "Marketplace", gold.Render("Marketplace"))
+	card = strings.ReplaceAll(card, "✅", green.Render("✅"))
+	card = strings.ReplaceAll(card, "⏎  进入主菜单", purple.Render("⏎  进入主菜单"))
+
+	return card
 }
 
-// RenderTryAgainFail 未通过画面
+// RenderTryAgainFail 未通过画面 — 霓虹鼓励版（没有"不通过"，只有"还没"）
 func RenderTryAgainFail(score, total int) string {
-	return fmt.Sprintf(`
-  ┌─────────────────────────────────────────────────────────────┐
-  │                                                             │
-  │          ✦   Not this time!   ✦                             │
-  │                                                             │
-  │     Score: %d / %d                                          │
-  │                                                             │
-  │     ✧   Keep learning, keep hacking!   ✧                    │
-  │                                                             │
-  └─────────────────────────────────────────────────────────────┘
-`, score, total)
+	card := fmt.Sprintf(`
+  ┌───────────────────────────────────────────────────────────────────┐
+  │                                                                   │
+  │     🌊   NOT YET, BUDDY                                           │
+  │                                                                   │
+  │     Score: %d / %d   (%d%%)   ⚡   Need ≥ %d / %d                 │
+  │                                                                   │
+  │     ┌─────────────────────────────────────────────────────────┐   │
+  │     │  🔁  重连 ssh diliy.cn  再挑战一次                       │   │
+  │     │  🧠  AI 每次动态生成 30 新题                             │   │
+  │     │  💡  本地题库无限次练习 · 答案有解析                      │   │
+  │     └─────────────────────────────────────────────────────────┘   │
+  │                                                                   │
+  │     目标线: Pass ≥ %d / %d (%d%%)                                  │
+  │                                                                   │
+  └───────────────────────────────────────────────────────────────────┘
+`, score, total, score*100/total, PassThreshold, total, PassThreshold, total, PassThreshold*100/total)
+
+	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
+	card = strings.ReplaceAll(card, "NOT YET, BUDDY", red.Render("NOT YET, BUDDY"))
+
+	return card
 }
 
 // ═══════════════════════════════════════════════
@@ -421,31 +528,31 @@ func RenderTryAgainFail(score, total int) string {
 // ═══════════════════════════════════════════════
 
 var (
-	// 颜色别名 (backward compat)
-	colorBrand      = cNeonPurple
-	colorBrandDark  = lipgloss.Color("#9d4edd")
-	colorAccent     = cNeonCyan
-	colorGold       = cNeonGold
-	colorSuccess    = cNeonGreen
-	colorDanger     = cNeonRed
+	// 颜色别名 (backward compat — 大地色系)
+	colorBrand      = cNeonPurple  // 主品牌海洋蓝
+	colorBrandDark  = lipgloss.Color("#1e40af")  // 深蓝
+	colorAccent     = cNeonCyan    // 河流青
+	colorGold       = cNeonGold    // 矿物金
+	colorSuccess    = cNeonGreen   // 地形绿
+	colorDanger     = cNeonRed     // 警示红
 	colorWarn       = cNeonGold
 	colorText       = cText
 	colorMuted      = cMuted
 	colorDim        = cDim
 	colorBorder     = cBorder
-	colorBorderSub  = lipgloss.Color("#3a3a5a")
+	colorBorderSub  = lipgloss.Color("#334155")  // slate-700
 
-	colorSelf   = cNeonCyan
-	colorOther  = cNeonPurple
-	colorDM     = cNeonPink
+	colorSelf   = cNeonCyan   // 河流青（自己的消息）
+	colorOther  = cNeonGreen  // 地形绿（别人的消息）
+	colorDM     = cNeonGold   // 矿物金（私信）
 	colorSystem = cDim
 
-	// 样式别名 (backward compat)
+	// 样式别名 (backward compat) — 大地蓝主题
 	styleLogo = lipgloss.NewStyle().Bold(true).Foreground(cNeonPurple).Padding(0, 1)
 
 	styleHeader = lipgloss.NewStyle().Bold(true).Foreground(cNeonPurple).MarginBottom(1)
 
-	styleHeaderBar = lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	styleHeaderBar = lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)  // 地形绿
 
 	styleCard = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

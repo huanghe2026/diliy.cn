@@ -182,6 +182,25 @@ func (s *Store) CreateUser(username, fingerprint, displayName, tagline, lang str
 	return res.LastInsertId()
 }
 
+// DeleteUser 删除用户及其答题记录（级联）— 用于 Switch User 替换旧身份
+func (s *Store) DeleteUser(userID int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 级联删 attempts
+	if _, err := tx.Exec(`DELETE FROM quiz_attempts WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	// 删用户
+	if _, err := tx.Exec(`DELETE FROM users WHERE id = ?`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // RecordAttempt 记录一次答题结果，若通过则同步标记用户 approved
 func (s *Store) RecordAttempt(userID int64, score, total int, passed bool) error {
 	now := time.Now().UTC().Format(time.RFC3339)

@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"geoyuan.cn/ssh/internal/card"
@@ -36,6 +37,12 @@ import (
 )
 
 func main() {
+	// 🧠 资源保护：2vCPU/1.8G 小机器，Go heap 必须主动归还 OS
+	// 默认 GOGC=100（heap 到上次 2 倍才 GC → 峰值 400M+ 不归还）
+	// 调到 50：heap 增长 50% 就触发 GC + 更激进归还
+	debug.SetGCPercent(50)
+	log.Printf("Go GOGC set to 50 (heap GC + aggressive return to OS)")
+
 	loadDotEnv()
 
 	addr := os.Getenv("GEOYUAN_ADDR")

@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"geoyuan.cn/ssh/internal/card"
 	"geoyuan.cn/ssh/internal/chat"
@@ -38,6 +39,7 @@ type Phase int
 
 const (
 	PhaseRegister Phase = iota
+	PhaseQuizLoading   // 🔁 NEW: AI 试题生成中（异步 loading）
 	PhaseQuiz
 	PhaseResult
 	PhaseWelcome
@@ -93,10 +95,11 @@ type Model struct {
 	inputErr       string
 
 	// 答题
-	questions []questions.Question
-	cursor    int
-	selected  int
-	answers   []int
+	questions  []questions.Question
+	cursor     int
+	selected   int
+	answers    []int
+	quizSource string // "AI" 或 "LOCAL" — 用户知道当前题目来源
 
 	// 动画状态（spinner 帧 + cursor blink 帧，全局共享）
 	spinnerFrame   uint
@@ -175,6 +178,8 @@ func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User
 		remoteIP:    ip,
 		remoteHost:  host,
 		geoLoc:      geo,
+		termWidth:   100, // 默认 100 宽 — 即使 PTY 窗口大小还没到，也能展示 Braille logo
+		termHeight:  30,
 	}
 	switch {
 	case user != nil && user.Status == store.StatusApproved:
@@ -296,6 +301,10 @@ type (
 		txHash string
 		err    error
 	}
+	quizLoadedMsg struct {
+		questions []questions.Question
+		err       error
+	}
 )
 
 func receiveMsgs(sub *chat.Subscription) tea.Cmd {
@@ -345,6 +354,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chatClosedMsg:
 		m.Done = true
 		return m, tea.Quit
+	case quizLoadedMsg:
+		// ✅ AI 试题生成完成（异步）— 切 Quiz 阶段
+		qs := msg.questions
+		m.quizSource = "AI"
+		if msg.err != nil || len(qs) == 0 {
+			log.Printf("[tui] quizLoadedMsg generate fallback: %v", msg.err)
+			qs = questions.All()
+			m.quizSource = "LOCAL" // 🧠 标记 fallback 来源
+		}
+		m.questions = qs
+		m.answers = make([]int, len(qs))
+		for i := range m.answers {
+			m.answers[i] = -1
+		}
+		m.cursor = 0
+		m.selected = 0
+		m.phase = PhaseQuiz
+		return m, nil
 	case mintResultMsg:
 		m.mintView = m.mintView.WithResult(msg.result, msg.err)
 		return m, nil
@@ -414,32 +441,48 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// ═══ 全局拦截 ═══
-	// 1) ? 键（非 Register/Quiz/QuitConfirm 阶段）→ 弹出帮助浮层
-	if msg.String() == "/" {
-		// Bubble Tea 对 ? 的处理：有的终端发 "/"，有的发 shift+/
-		// msg.String() 对 / 的值取决于键盘布局，我们也映射一下 shift 组合
-	}
 	switch msg.String() {
 	case "?", "/":
-		// Register/Quiz 阶段先不打扰（正在输入/答题）
-		if m.phase != PhaseRegister && m.phase != PhaseQuiz && m.phase != PhaseQuitConfirm && m.phase != PhaseHelp {
+		// 任何 Phase 都可以弹帮助（除了 QuitConfirm/Help 自己）
+		if m.phase != PhaseQuitConfirm && m.phase != PhaseHelp {
 			m.prevPhase = m.phase
 			m.phase = PhaseHelp
+			// 🛑 Blur textinput — 避免 help 浮层里光标泄漏
+			m.nameInput.Blur()
+			m.displayInput.Blur()
+			m.taglineInput.Blur()
+			if m.chatInput.Focused() {
+				m.chatInput.Blur()
+			}
 			return m, nil
 		}
 	case "escape", "esc":
-		// Esc 在 Menu/Welcome/Result/Chat 直接退出 → 改为确认弹窗
-		if m.phase == PhaseMenu || m.phase == PhaseChat || m.phase == PhaseWelcome || m.phase == PhaseResult || m.phase == PhaseRetry {
+		// 顶层页面：Esc → QuitConfirm（防误退出）
+		switch m.phase {
+		case PhaseRegister, PhaseQuizLoading, PhaseQuiz, PhaseResult,
+			PhaseWelcome, PhaseRetry, PhaseMenu:
 			m.prevPhase = m.phase
 			m.phase = PhaseQuitConfirm
+			// 🛑 Blur 所有 textinput — 不然 QuitConfirm modal 里会冒出闪烁光标
+			m.nameInput.Blur()
+			m.displayInput.Blur()
+			m.taglineInput.Blur()
+			if m.chatInput.Focused() {
+				m.chatInput.Blur()
+			}
 			return m, nil
 		}
+		// PhaseMyCards / PhaseMarket / PhaseListCard / PhaseChat / PhaseMint / PhaseQuitConfirm / PhaseHelp
+		// 让它们自己的 update 处理（Esc 返回上级或关闭弹窗）
 	}
 
 	// ═══ 分发到各阶段 ═══
 	switch m.phase {
 	case PhaseRegister:
 		return m.updateRegister(msg)
+	case PhaseQuizLoading:
+		// Loading 阶段忽略所有按键（除了已被全局 Esc 拦截的）
+		return m, nil
 	case PhaseQuiz:
 		return m.updateQuiz(msg)
 	case PhaseResult:
@@ -481,6 +524,8 @@ func (m Model) View() string {
 	switch m.phase {
 	case PhaseRegister:
 		return m.viewRegister()
+	case PhaseQuizLoading:
+		return m.viewQuizLoading()
 	case PhaseQuiz:
 		return m.viewQuiz()
 	case PhaseResult:
@@ -492,7 +537,12 @@ func (m Model) View() string {
 	case PhaseMenu:
 		return m.viewMenu()
 	case PhaseMintCard:
-		return m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
+		// PhaseMint.View() 自带标题行 "🎴 Mint a Geoyuan Card" — 剥掉让 headerBar 做标题
+		mintBody := m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
+		if idx := strings.Index(mintBody, "\n\n"); idx > 0 {
+			mintBody = mintBody[idx+2:] // 去掉 "🎴 Mint a Geoyuan Card\n\n"
+		}
+		return m.headerBar() + mintBody + m.statusLine()
 	case PhaseMyCards:
 		return m.viewMyCards()
 	case PhaseMarket:
@@ -563,34 +613,106 @@ func (m Model) breadcrumb() string {
 	return "  Home"
 }
 
-// statusLine claude code / qodercli 风格单行状态条
-// 紧凑 dim 色 · phase · wallet · chain · keys 五段
+func shortWalletAddr(addr string) string {
+	if len(addr) <= 10 {
+		return ""
+	}
+	return addr[:6] + "…" + addr[len(addr)-4:]
+}
+
+// statusLine renders the shared footer, dropping optional segments before truncating.
 func (m Model) statusLine() string {
+	termWidth := m.termWidth
+	if termWidth <= 0 {
+		termWidth = 80
+	}
+	safeW := termWidth - 1
+	if safeW < 1 {
+		safeW = 1
+	}
+
 	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
 	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
 	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
 
-	phase := phaseBadge(m.phase)
-
 	wallet := ""
 	if m.user != nil {
-		addr := m.userWalletAddr()
-		if addr != "" && len(addr) > 10 {
-			wallet = cyan.Render("🔑 " + addr[:6] + "…" + addr[len(addr)-4:])
+		if addr := shortWalletAddr(m.userWalletAddr()); addr != "" {
+			wallet = cyan.Render("🔑 " + addr)
 		}
 	}
-	chain := green.Render("✅ Amoy")
-	keys := dim.Render("↑↓ Nav · Enter Select · ? Help · Esc Back")
-
-	sep := dim.Render("·")
-	parts := []string{gold.Render("◆"), phase}
-	if wallet != "" {
-		parts = append(parts, wallet)
+	chain := dim.Render("○ Offline")
+	if m.chainReady() {
+		chain = green.Render("✅ Amoy")
 	}
-	parts = append(parts, chain, keys)
 
-	return "\n" + strings.Join(parts, " "+sep+" ") + "\n"
+	phase := phaseBadge(m.phase)
+	compactPhase := compactPhaseBadge(m.phase)
+	variants := []struct {
+		phase       string
+		showWallet  bool
+		showChain   bool
+		keys        string
+	}{
+		{phase, true, true, "↑↓ Nav · Enter Select · ? Help · Esc Back"},
+		{phase, true, true, "? Help · Esc Back"},
+		{phase, false, true, "? Help · Esc"},
+		{phase, false, false, "? Esc"},
+		{compactPhase, false, true, "? Esc"},
+		{compactPhase, false, false, "Esc"},
+	}
+	for _, variant := range variants {
+		parts := []string{gold.Render("◆"), variant.phase}
+		if variant.showWallet && wallet != "" {
+			parts = append(parts, wallet)
+		}
+		if variant.showChain {
+			parts = append(parts, chain)
+		}
+		parts = append(parts, dim.Render(variant.keys))
+		line := strings.Join(parts, dim.Render(" · "))
+		if displayWidth(line) <= safeW {
+			return "\n" + line + "\n"
+		}
+	}
+	return "\n" + truncateHeaderText(gold.Render("◆ "+compactPhase), safeW) + "\n"
+}
+
+func compactPhaseBadge(p Phase) string {
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	switch p {
+	case PhaseRegister:
+		return gold.Render("REG")
+	case PhaseQuizLoading:
+		return gold.Render("LOAD")
+	case PhaseQuiz:
+		return gold.Render("QUIZ")
+	case PhaseResult:
+		return gold.Render("RESULT")
+	case PhaseWelcome:
+		return gold.Render("HOME")
+	case PhaseRetry:
+		return gold.Render("RETRY")
+	case PhaseMenu:
+		return gold.Render("MENU")
+	case PhaseMintCard:
+		return gold.Render("MINT")
+	case PhaseMyCards:
+		return gold.Render("CARDS")
+	case PhaseMarket:
+		return gold.Render("MARKET")
+	case PhaseListCard:
+		return gold.Render("LIST")
+	case PhaseChat:
+		return gold.Render("CHAT")
+	case PhaseQuitConfirm:
+		return gold.Render("QUIT")
+	case PhaseHelp:
+		return gold.Render("HELP")
+	default:
+		return gold.Render("HOME")
+	}
 }
 
 // phaseBadge 把 Phase 转成简短徽章文本
@@ -599,6 +721,8 @@ func phaseBadge(p Phase) string {
 	switch p {
 	case PhaseRegister:
 		return gold.Render("📝 REGISTER")
+	case PhaseQuizLoading:
+		return gold.Render("⏳ LOADING")
 	case PhaseQuiz:
 		return gold.Render("🧠 QUIZ")
 	case PhaseResult:
@@ -623,32 +747,69 @@ func phaseBadge(p Phase) string {
 	return gold.Render("HOME")
 }
 
-// headerBar 顶部条：logo + 面包屑 + 用户信息 + 全局返回提示
-func (m Model) headerBar(title string) string {
-	var b strings.Builder
-
-	// 1️⃣ 三层 fallback logo（Braille → Halfblock → Fallback，按终端宽度自动选）
-	b.WriteString(RenderLogo(m.termWidth))
-
-	// 2️⃣ 紧凑单行 header：◆ geoyuan + 面包屑 + 用户信息
-	b.WriteString(styleLogo.Render(" ◆ geoyuan"))
-	b.WriteString(styleHeader.Render(m.breadcrumb()))
-
-	right := m.userInfoString()
-	b.WriteString(strings.Repeat(" ", 2))
-	b.WriteString(right)
-
-	if m.phase != PhaseMenu && m.phase != PhaseChat {
-		b.WriteString(strings.Repeat(" ", 2))
-		b.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(" Esc←Back"))
+// headerBar renders a complete responsive logo above a single-cell-safe navigation line.
+func (m Model) headerBar() string {
+	termWidth := m.termWidth
+	if termWidth <= 0 {
+		termWidth = 80
+	}
+	safeW := termWidth - 1
+	if safeW < 1 {
+		safeW = 1
 	}
 
-	// 3️⃣ 分隔线
-	b.WriteString("\n" + lipgloss.NewStyle().
-		Foreground(colorBrand).
-		Render(strings.Repeat("━", 80)) + "\n")
+	var b strings.Builder
+	if m.termHeight > 0 && m.termHeight < 20 {
+		b.WriteString(renderCompactLogo(safeW))
+	} else {
+		b.WriteString(RenderLogo(safeW))
+	}
+	b.WriteString("\x1b[0m")
 
+	left := " \x1b[1;34mgeoyuan\x1b[0m  \x1b[1;34m" + strings.TrimLeft(m.breadcrumb(), " ") + "\x1b[0m"
+	esc := "\x1b[90mEsc\x1b[0m"
+	right := esc
+	if info := m.userInfoShort(); info != "" {
+		right = info + "  " + esc
+	}
+
+	leftW := displayWidth(left)
+	rightW := displayWidth(right)
+	if leftW+rightW+2 > safeW {
+		right = esc
+		rightW = displayWidth(right)
+	}
+
+	switch {
+	case leftW+rightW+2 <= safeW:
+		padding := safeW - leftW - rightW - 2
+		b.WriteString(left)
+		b.WriteString(strings.Repeat(" ", padding))
+		b.WriteString(right)
+	case rightW+2 <= safeW:
+		left = truncateHeaderText(left, safeW-rightW-2)
+		b.WriteString(left)
+		b.WriteString("  ")
+		b.WriteString(right)
+	default:
+		b.WriteString(truncateHeaderText(left, safeW))
+	}
+	b.WriteString("\n\n")
 	return b.String()
+}
+
+func truncateHeaderText(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if displayWidth(s) <= width {
+		return s
+	}
+	tail := ""
+	if width >= 4 {
+		tail = "…"
+	}
+	return ansi.Truncate(s, width, tail)
 }
 
 // hintBar 底部统一导航提示（所有 View 共用）
@@ -693,7 +854,27 @@ func (m Model) userInfoString() string {
 	return strings.Join(parts, "  ")
 }
 
-// ═══════════════════════════════════════════════
+// userInfoShort 顶栏用 — 全 ASCII 短格式（避免 emoji 宽度陷阱导致折行）
+func (m Model) userInfoShort() string {
+	var parts []string
+	if m.user != nil {
+		parts = append(parts, m.user.Username)
+	}
+	if m.remoteIP != "" {
+		ip := m.remoteIP
+		if len(ip) > 11 {
+			ip = ip[:11] + ".."
+		}
+		parts = append(parts, ip)
+	}
+	if m.ChatHub != nil {
+		count := m.ChatHub.Count()
+		if count > 0 {
+			parts = append(parts, fmt.Sprintf("%d chat", count))
+		}
+	}
+	return strings.Join(parts, " - ")
+}
 //
 //	📝 注册向导 — 4 字段同卡展示
 //
@@ -701,12 +882,8 @@ func (m Model) userInfoString() string {
 func (m Model) viewRegister() string {
 	var b strings.Builder
 
-	// headerBar 已带三层 fallback logo + 紧凑单行 header
-	b.WriteString(m.headerBar(" · Register"))
-
-	// 启动欢迎 splash 横幅（Register 页独有的开场）
-	b.WriteString("\n" + RenderSplash(m.termWidth) + "\n\n")
-
+	// headerBar 已带三层 fallback logo + 紧凑单行 header + 全宽分隔线
+	b.WriteString(m.headerBar())
 	// ═══ 颜色 / 样式 ═══
 	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
@@ -714,9 +891,20 @@ func (m Model) viewRegister() string {
 	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
 	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
 
+	// 卡片宽度自适应（max 72 或 termWidth-6）
+	cardWidth := adaptiveCardWidth(m.termWidth)
+
 	// ═══ 进度 header ═══
 	var content strings.Builder
 	content.WriteString(gold.Render("  📝  CREATE YOUR GEOYUAN ID") + "\n\n")
+
+	// 🧠 Switch User 警告 — 同 fp 重新注册会替换旧账号
+	if m.fp != "" {
+		if oldUser, _ := m.store.GetUserByFingerprint(m.fp); oldUser != nil {
+			content.WriteString(red.Render("  ⚠  Switch User mode: 你的 SSH key 已绑定账号 '"+oldUser.Username+"'") + "\n")
+			content.WriteString(dim.Render("     继续注册新用户名会替换旧账号（答题记录将重置）") + "\n\n")
+		}
+	}
 
 	// Step hint（当前步骤标题）
 	stepTitles := []string{
@@ -804,7 +992,6 @@ func (m Model) viewRegister() string {
 	content.WriteString(dim.Render("  💡  Tab/↓ Next  ·  Shift+Tab/↑ Prev  ·  Enter Submit  ·  :skip all  ·  :redeem <token>"))
 
 	// ═══ 组装卡片 ═══
-	cardWidth := 72
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
@@ -817,6 +1004,7 @@ func (m Model) viewRegister() string {
 
 	// 底部连接信息
 	b.WriteString(m.connectionLine())
+	b.WriteString(m.statusLine())
 
 	return b.String()
 }
@@ -1129,6 +1317,19 @@ func (m Model) submitRegister() (tea.Model, tea.Cmd) {
 
 	uid, err := m.store.CreateUser(username, m.fp, displayName, tagline, lang)
 	if err != nil {
+		// 🧠 fingerprint 已绑定旧用户（UNIQUE 冲突）— 自动替换
+		// 这是 Switch User 后的正常路径
+		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "already exists") {
+			oldUser, _ := m.store.GetUserByFingerprint(m.fp)
+			if oldUser != nil {
+				// DELETE 旧用户（会级联删 attempts）
+				_ = m.store.DeleteUser(oldUser.ID)
+			}
+			// 重试 INSERT
+			uid, err = m.store.CreateUser(username, m.fp, displayName, tagline, lang)
+		}
+	}
+	if err != nil {
 		m.inputErr = "Register failed: " + err.Error()
 		return m, nil
 	}
@@ -1143,8 +1344,8 @@ func (m Model) submitRegister() (tea.Model, tea.Cmd) {
 		Status:      store.StatusPending,
 	}
 	m.inputErr = ""
-	m.startQuiz()
-	return m, nil
+	m.phase = PhaseQuizLoading
+	return m, m.startQuizCmd()
 }
 
 // tryRedeem 通用 token 兑换逻辑（注册页 / 重试页 / 聊天室 共用）
@@ -1300,12 +1501,18 @@ func (m Model) viewQuiz() string {
 	var b strings.Builder
 	q := m.questions[m.cursor]
 	total := len(m.questions)
+	answered := 0
+	for _, a := range m.answers {
+		if a >= 0 {
+			answered++
+		}
+	}
 
-	b.WriteString(m.headerBar(fmt.Sprintf("·  AI RECRUITMENT QUIZ  ·  %d / %d", m.cursor+1, total)))
+	b.WriteString(m.headerBar())
 
 	var content strings.Builder
-	// 📊 霓虹进度条
-	content.WriteString(renderFancyProgress(m.cursor+1, total))
+	// 📊 双层进度条：像素 bar + 每题 dot map
+	content.WriteString(renderQuizProgress(m.cursor, total, m.answers, answered))
 	content.WriteString("\n\n")
 
 	// ❓ 题目卡片
@@ -1325,48 +1532,144 @@ func (m Model) viewQuiz() string {
 
 	content.WriteString(styleCard.Render(card))
 	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  ↑↓/jk to navigate  ·  1-4 to select & advance  ·  ⏎ to confirm  ·  Ctrl+C to exit"))
+
+	var hint string
+	if m.cursor == total-1 {
+		hint = "  ↑↓/jk 选择  ·  1-4 快选  ·  ⏎ 提交最终答案  ·  Esc 退出"
+	} else {
+		hint = "  ↑↓/jk 选择  ·  1-4 快选并前进  ·  ⏎ 提交前进  ·  Esc 退出"
+	}
+	// 🧠 题目来源标记 — AI vs LOCAL fallback
+	if m.quizSource == "LOCAL" {
+		hint = lipgloss.NewStyle().Foreground(cNeonGold).Render("  ⚠ AI 超时 · 当前使用本地题库") + "\n" +
+			lipgloss.NewStyle().Foreground(cMuted).Render(hint)
+	} else {
+		hint = lipgloss.NewStyle().Foreground(cNeonCyan).Render("  🧠 AI 动态生成题库 · 每次不同") + "\n" +
+			lipgloss.NewStyle().Foreground(cMuted).Render(hint)
+	}
+	content.WriteString(hint)
 
 	b.WriteString(lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
 	return b.String()
 }
 
-func (m *Model) startQuiz() {
-	// 用 generator 配置的 timeout，fallback 60s
-	timeout := 60 * time.Second
-	if m.generator != nil {
-		timeout = m.generator.Cfg().Timeout
+// renderQuizProgress 双层 Quiz 进度：像素 bar + 每题 dot map
+// dot map 视觉密度高但清晰 — 用户一眼知道自己在哪、哪些答了、还剩多少
+func renderQuizProgress(cur, total int, answers []int, answered int) string {
+	if total <= 0 {
+		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 
-	var qs []questions.Question
-	if m.generator != nil {
+	// 第一层：像素 bar (36 格)
+	barWidth := 36
+	filled := answered * barWidth / total
+	empty := barWidth - filled
+
+	barFilled := lipgloss.NewStyle().Foreground(cNeonGreen).Render(strings.Repeat("█", filled))
+	barEmpty := lipgloss.NewStyle().Foreground(cDim).Render(strings.Repeat("░", empty))
+	pct := answered * 100 / total
+	pctStyle := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
+	countStyle := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+
+	var barLine strings.Builder
+	barLine.WriteString("📊 ")
+	barLine.WriteString(barFilled)
+	barLine.WriteString(barEmpty)
+	barLine.WriteString("  ")
+	barLine.WriteString(countStyle.Render(fmt.Sprintf("%d/%d", answered, total)))
+	barLine.WriteString("  ")
+	barLine.WriteString(pctStyle.Render(fmt.Sprintf("(%d%%)", pct)))
+
+	// 第二层：每题 dot map — 30 题用 ●/○ 一行显示
+	//  ● = 已答  (green)
+	//  ◎ = 当前题 (yellow 高亮)
+	//  ○ = 未到达 (dim)
+	// 为了不溢出，每 5 个加一个小分隔
+	var dotLine strings.Builder
+	dotLine.WriteString("   ")
+	for i := 0; i < total; i++ {
+		if i > 0 && i%5 == 0 {
+			dotLine.WriteString(" ") // 每 5 题一个空格分隔
+		}
+		var dot string
+		if i == cur {
+			dot = lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("◎")
+		} else if i < cur || answers[i] >= 0 {
+			dot = lipgloss.NewStyle().Foreground(cNeonGreen).Render("●")
+		} else {
+			dot = lipgloss.NewStyle().Foreground(cDim).Render("○")
+		}
+		dotLine.WriteString(dot)
+	}
+	// 加图例
+	dotLine.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(fmt.Sprintf("  ← Q%d 当前", cur+1)))
+
+	return barLine.String() + "\n" + dotLine.String()
+}
+
+// startQuizCmd — 异步 AI 试题生成（不阻塞 UI）
+// 用法: m.phase = PhaseQuizLoading; return m, m.startQuizCmd()
+func (m *Model) startQuizCmd() tea.Cmd {
+	gen := m.generator
+	return func() tea.Msg {
+		timeout := 90 * time.Second
+		if gen != nil {
+			timeout = gen.Cfg().Timeout
+			if timeout < 10*time.Second {
+				timeout = 90 * time.Second
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		var qs []questions.Question
 		var err error
-		qs, err = m.generator.Generate(ctx, QuizCount)
-		if err != nil {
-			log.Printf("[tui] startQuiz fallback: %v", err)
+		if gen != nil {
+			qs, err = gen.Generate(ctx, QuizCount)
+			if err != nil || len(qs) == 0 {
+				log.Printf("[tui] startQuizCmd AI generate fallback: %v", err)
+				qs = questions.All()
+			}
+		} else {
 			qs = questions.All()
 		}
-	} else {
-		qs = questions.All()
+		return quizLoadedMsg{questions: qs, err: err}
 	}
+}
 
-	m.questions = qs
-	m.answers = make([]int, len(qs))
-	for i := range m.answers {
-		m.answers[i] = -1
-	}
-	m.cursor = 0
-	m.selected = 0
-	m.phase = PhaseQuiz
+// viewQuizLoading — AI 试题生成中（spinner + 进度提示）
+func (m Model) viewQuizLoading() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar())
+
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
+
+	spinner := m.spinner()
+	content := gold.Render("  🧠  正在用 AI 生成 30 道试题...") + "\n\n" +
+		cyan.Render("  ") + spinner + "  " + cyan.Render("连接中 · 最长 90 秒") + "\n\n" +
+		dim.Render("  💡  如果 AI 超时，会自动切换到本地题库（30 题）") + "\n\n" +
+		dim.Render("  按 Esc 取消")
+
+	cardWidth := adaptiveCardWidth(m.termWidth)
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(cardWidth).
+		Render(content))
+
+	b.WriteString("\n\n")
+	b.WriteString(m.statusLine())
+	return b.String()
 }
 
 func (m *Model) commitAndAdvance() {
@@ -1414,7 +1717,7 @@ func (m Model) viewResult() string {
 		pct = m.score * 100 / total
 	}
 
-	b.WriteString(m.headerBar("·  RECRUITMENT RESULT  ·"))
+	b.WriteString(m.headerBar())
 
 	var content strings.Builder
 
@@ -1480,7 +1783,7 @@ func (m Model) viewResult() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -1559,7 +1862,7 @@ func renderFancyProgress(cur, total int) string {
 // ═══════════════════════════════════════════════
 func (m Model) viewWelcome() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar("·  WELCOME BACK  ·"))
+	b.WriteString(m.headerBar())
 
 	var content strings.Builder
 
@@ -1594,7 +1897,7 @@ func (m Model) viewWelcome() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -1618,8 +1921,8 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if m.retrySel == 0 {
-			m.startQuiz()
-			return m, nil
+			m.phase = PhaseQuizLoading
+			return m, m.startQuizCmd()
 		} else if m.retrySel == 1 {
 			// 退回注册页（支持 :redeem token）
 			ti1 := textinput.New()
@@ -1645,6 +1948,18 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.registerStep = 0
 			m.inputErr = ""
 			m.phase = PhaseRegister
+
+			// ✅ 回填已有用户信息（samhuang 不丢 username）
+			if m.user != nil && m.user.Username != "" {
+				m.nameInput.SetValue(m.user.Username)
+			}
+			if m.user != nil && m.user.DisplayName != "" {
+				m.displayInput.SetValue(m.user.DisplayName)
+			}
+			if m.user != nil && m.user.Tagline != "" {
+				m.taglineInput.SetValue(m.user.Tagline)
+			}
+
 			return m, nil
 		}
 		m.Done = true
@@ -1655,7 +1970,7 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) viewRetry() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar("· 再次挑战 ·"))
+	b.WriteString(m.headerBar())
 
 	var content strings.Builder
 	content.WriteString(styleCardDanger.Render(fmt.Sprintf(
@@ -1684,7 +1999,7 @@ func (m Model) viewRetry() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -1785,13 +2100,9 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) viewChat() string {
 	var b strings.Builder
-	count := 0
-	if m.ChatHub != nil {
-		count = m.ChatHub.Count()
-	}
 
 	// Header
-	b.WriteString(m.headerBar(fmt.Sprintf("· 💬 私密聊天室  |  在线 %d ·", count)))
+	b.WriteString(m.headerBar())
 
 	var content strings.Builder
 
@@ -1822,7 +2133,7 @@ func (m Model) viewChat() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -1885,13 +2196,13 @@ var menuItems = []struct {
 	{"🃏", "My Cards", "View your minted cards and H3 cells"},
 	{"🛒", "Marketplace", "Browse & trade cards listed by the community"},
 	{"💬", "Crew Chat", "Talk with other Geoyuan builders"},
-	{"🌐", "Open geoyuan.com", "Learn more about the Network State"},
+	{"🔄", "Switch User", "Clear session · 换账号登录"},
 	{"🚪", "Exit", "Disconnect from SSH"},
 }
 
 func (m Model) viewMenu() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar(" · Main Menu"))
+	b.WriteString(m.headerBar())
 	b.WriteString("\n")
 
 	// 欢迎标语（logo 已由 headerBar 提供）
@@ -2051,10 +2362,11 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		return m.enterMenuSelection()
-	case "q", "esc":
-		m.cleanupChat()
-		m.Done = true
-		return m, tea.Quit
+	case "q":
+		// 全局 Esc 已经拦截了 → QuitConfirm；这里 "q" 也是退出确认
+		m.prevPhase = m.phase
+		m.phase = PhaseQuitConfirm
+		return m, nil
 	}
 	return m, nil
 }
@@ -2083,16 +2395,57 @@ func (m Model) enterMenuSelection() (tea.Model, tea.Cmd) {
 	case 3: // 4 → Crew Chat
 		m.enterChat()
 		return m, tea.Batch(textinput.Blink, receiveMsgs(m.sub))
-	case 4: // 5 → geoyuan.com — 显示 URL 后退出
-		fmt.Print("\n  🌐 Visit https://www.geoyuan.com/\n\n")
-		m.Done = true
-		return m, tea.Quit
+	case 4: // 5 → Switch User（🔄）
+		m.cleanupChat()
+		m.switchUser() // 清 session 回到注册页
+		return m, nil
 	case 5: // 6 → Exit
 		m.cleanupChat()
 		m.Done = true
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// switchUser 🔄 切换用户 — 清空当前 TUI 状态，允许用同一个 SSH 指纹重新注册
+// ⚠ 注意：Geoyuan 是 SSH pubkey fingerprint = 身份，1 个 key = 1 个账号
+// 真正"换身份"需要换 SSH key（ssh-keygen 生成新 key 再连）
+// 这里做的是：清 TUI 层 user 状态 → 允许重新注册覆盖旧用户名
+func (m *Model) switchUser() {
+	// 保留 m.fp — 这是 SSH 连接层身份，不能在 TUI 层清
+	// 清 user + 答题状态
+	m.user = nil
+	m.answers = nil
+	m.questions = nil
+	m.quizSource = ""
+	m.cursor = 0
+	m.selected = 0
+
+	// 清聊天
+	m.cleanupChat()
+
+	// 重置 textinput 到空状态
+	m.nameInput = textinput.New()
+	m.nameInput.Placeholder = "Username (alnum, 3-20)"
+	m.nameInput.CharLimit = 20
+	m.nameInput.Prompt = "> "
+	m.nameInput.Focus()
+
+	m.displayInput = textinput.New()
+	m.displayInput.Placeholder = "Display name (optional)"
+	m.displayInput.CharLimit = 30
+	m.displayInput.Prompt = "> "
+
+	m.taglineInput = textinput.New()
+	m.taglineInput.Placeholder = "One line about you (optional)"
+	m.taglineInput.CharLimit = 80
+	m.taglineInput.Prompt = "> "
+
+	m.langCursor = 1
+	m.registerStep = 0
+	m.inputErr = ""
+
+	m.phase = PhaseRegister
 }
 
 // ═══════════════════════════════════════════════
@@ -2187,7 +2540,7 @@ func (m Model) chainReady() bool {
 
 func (m Model) viewMyCards() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar(" · My Cards"))
+	b.WriteString(m.headerBar())
 	b.WriteString("\n")
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -2280,7 +2633,7 @@ func (m Model) viewMyCards() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -2365,7 +2718,7 @@ func (m Model) loadMarketCmd() tea.Cmd {
 
 func (m Model) viewMarket() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar(" · Marketplace"))
+	b.WriteString(m.headerBar())
 	b.WriteString("\n")
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -2417,7 +2770,7 @@ func (m Model) viewMarket() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -2486,7 +2839,7 @@ func (m Model) updateMarket(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) viewListCard() string {
 	var b strings.Builder
-	b.WriteString(m.headerBar(" · List Card for Sale"))
+	b.WriteString(m.headerBar())
 	b.WriteString("\n")
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -2539,7 +2892,7 @@ func (m Model) viewListCard() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(72).
+		Width(adaptiveCardWidth(m.termWidth)).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
@@ -2692,57 +3045,36 @@ func maticToWei(s string) (*big.Int, error) {
 // ═══════════════════════════════════════════════
 
 func (m Model) viewQuitConfirm() string {
-	// 先渲染底层页面（让弹窗显得是"浮层"）
-	var bg string
-	switch m.prevPhase {
-	case PhaseMenu:
-		bg = m.viewMenu()
-	case PhaseWelcome:
-		bg = m.viewWelcome()
-	case PhaseMyCards:
-		bg = m.viewMyCards()
-	case PhaseMarket:
-		bg = m.viewMarket()
-	case PhaseListCard:
-		bg = m.viewListCard()
-	case PhaseMintCard:
-		bg = m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
-	case PhaseChat:
-		bg = m.viewChat()
-	default:
-		bg = m.viewMenu()
-	}
-
-	// 半透明遮罩：用大量空格盖上去（近似效果）
-	// 实际上 Bubble Tea 做真正 overlay 复杂，这里简化为底部弹出 modal
+	// 纯 modal — 不渲染底层（避免 textinput 光标泄漏 / 半透明露底）
+	// 只在顶部空 3 行让视觉居中
 	var b strings.Builder
-	b.WriteString(strings.Repeat("\n", 2)) // 留空
+	b.WriteString(strings.Repeat("\n", 2)) // 顶部 padding
 
 	warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
+	gold := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
 
-	// 画一个居中的 modal 框
-	boxTop := "┌────────────────────────────────────────────────────┐"
-	boxMid := "│ " + warn.Render("⚠  Are you sure you want to quit Geoyuan?") + " │"
-	boxLine := "│" + strings.Repeat(" ", 52) + "│"
-	yesLine := "│   " + green.Render("y / Enter") + "  → Quit TUI                    │"
-	noLine := "│   " + neon.Render("n / Esc") + "  → Stay here (back to " + phaseLabel(m.prevPhase) + ") │"
-	boxBot := "└────────────────────────────────────────────────────┘"
+	// 画一个居中的 modal 框（72 宽，适配各种终端）
+	boxTop := "┌────────────────────────────────────────────────────────────┐"
+	boxMid := "│  " + warn.Render("⚠  What do you want to do?") + "                                  │"
+	boxLine := "│                                                              │"
+	yesLine := "│     " + green.Render("y / Enter") + "  → Disconnect SSH                               │"
+	switchLine := "│     " + gold.Render("u") + "        → Switch User (clear session)                     │"
+	noLine := "│     " + neon.Render("n / Esc") + "  → Stay here (back to " + phaseLabel(m.prevPhase) + strings.Repeat(" ", 14-len(phaseLabel(m.prevPhase))) + ") │"
+	boxBot := "└────────────────────────────────────────────────────────────┘"
 
 	b.WriteString(boxTop + "\n")
 	b.WriteString(boxMid + "\n")
 	b.WriteString(boxLine + "\n")
-	b.WriteString("│  This will disconnect your SSH session.\n")
-	b.WriteString("│  No card / wallet data is ever stored.\n")
 	b.WriteString(boxLine + "\n")
 	b.WriteString(yesLine + "\n")
+	b.WriteString(switchLine + "\n")
 	b.WriteString(noLine + "\n")
 	b.WriteString(boxBot + "\n")
-	b.WriteString(hintBar("y / Enter → Quit", "n / Esc → Stay"))
+	b.WriteString("\n")
+	b.WriteString(hintBar("y → Quit", "u → Switch User", "n / Esc → Stay"))
 
-	// 用 bg 作为底色（简化：直接返回 modal，不叠加到底层）
-	_ = bg
 	return b.String()
 }
 
@@ -2752,6 +3084,10 @@ func (m Model) updateQuitConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cleanupChat()
 		m.Done = true
 		return m, tea.Quit
+	case "u", "U":
+		// 🔄 Switch User — 不 disconnect，清 session 回到注册页
+		m.switchUser()
+		return m, nil
 	case "n", "N", "esc":
 		m.phase = m.prevPhase
 		return m, nil
@@ -2787,14 +3123,53 @@ func phaseLabel(p Phase) string {
 // ═══════════════════════════════════════════════
 
 func (m Model) viewHelpOverlay() string {
+	// 先渲染底层页面（让 Braille logo + headerBar 保留）
+	var bg string
+	switch m.prevPhase {
+	case PhaseRegister:
+		bg = m.viewRegister()
+	case PhaseQuizLoading:
+		bg = m.viewQuizLoading()
+	case PhaseQuiz:
+		bg = m.viewQuiz()
+	case PhaseResult:
+		bg = m.viewResult()
+	case PhaseWelcome:
+		bg = m.viewWelcome()
+	case PhaseRetry:
+		bg = m.viewRetry()
+	case PhaseMenu:
+		bg = m.viewMenu()
+	case PhaseMyCards:
+		bg = m.viewMyCards()
+	case PhaseMarket:
+		bg = m.viewMarket()
+	case PhaseListCard:
+		bg = m.viewListCard()
+	case PhaseChat:
+		bg = m.viewChat()
+	case PhaseMintCard:
+		bg = m.mintView.View(m.termWidth, m.termHeight, m.geoLoc)
+		if idx := strings.Index(bg, "\n\n"); idx > 0 {
+			bg = bg[idx+2:]
+		}
+		bg = m.headerBar() + bg
+	default:
+		bg = m.viewMenu()
+	}
+
 	var b strings.Builder
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
 
+	// 半透明遮罩层：底部弹出 modal
+	b.WriteString(bg)
+	b.WriteString(strings.Repeat("\n", 1))
+
 	// 顶部标题
-	b.WriteString("\n  " + neon.Render("◆ GEoYUAN  KEYBOARD REFERENCE"))
+	b.WriteString("  " + neon.Render("◆ GEoYUAN  KEYBOARD REFERENCE"))
 	b.WriteString("  " + dim.Render("(press any key or Esc to close)"))
 	b.WriteString("\n\n")
 

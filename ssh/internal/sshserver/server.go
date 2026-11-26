@@ -35,9 +35,9 @@ import (
 // 资源保护参数：公网 22 端口会被扫描器高频连接，必须限流，
 // 否则单机容易被大量空闲连接拖垮。
 const (
-	maxConcurrentConns = 64               // 同时处理的 TCP 连接上限
-	handshakeTimeout   = 15 * time.Second // 必须在该时间内完成握手
-	maxSessionDuration = 60 * time.Minute // 单次会话最长时长（聊天室允许更久）
+	maxConcurrentConns = 16               // 同时处理的 TCP 连接上限（16 足够真实用户，扫描写进就拒）
+	handshakeTimeout   = 10 * time.Second // 必须在该时间内完成握手（收紧）
+	maxSessionDuration = 45 * time.Minute // 单次会话最长时长（缩短）
 )
 
 // Server 持有存储、AI 题目生成器、聊天中心、用户钱包服务与监听地址
@@ -99,7 +99,12 @@ func (s *Server) ListenAndServe(hostKeyPath string) error {
 		select {
 		case sem <- struct{}{}:
 			go func() {
-				defer func() { <-sem }()
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[panic] handleConn panic (remote=%s): %v", nConn.RemoteAddr(), r)
+					}
+					<-sem
+				}()
 				s.handleConn(nConn, config)
 			}()
 		default:
@@ -172,18 +177,30 @@ type winChange struct {
 
 // handleSession 把 channel I/O 接入 bubbletea 运行 TUI
 func (s *Server) handleSession(ch ssh.Channel, requests <-chan *ssh.Request, fp string, remoteAddr string) {
-	defer ch.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[panic] handleSession panic (remote=%s fp=%s): %v", remoteAddr, fp[:min(len(fp),8)], r)
+		}
+		ch.Close()
+	}()
 
 	// 解析 remoteAddr → IP + 主机名（Reverse DNS，同步做一次，快的）
 	ip, host := parseRemote(remoteAddr)
-	go func() {
-		// 异步补全主机名（如果一开始没有）
-		if host == "" {
+
+	// 异步补全主机名（如果一开始没有）— 带 recover 防 goroutine 泄漏
+	if host == "" {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[panic] reverse dns goroutine: %v", r)
+				}
+			}()
 			if h, err := net.LookupAddr(ip); err == nil && len(h) > 0 {
-				host = h[0]
+				// 只用于日志，不修改外层 host（避免 race）
+				log.Printf("[dns] %s → %s", ip, h[0])
 			}
-		}
-	}()
+		}()
+	}
 
 	// 🌍 查 IP 地理位置（带缓存 + 2s 超时，失败降级显示 IP）
 	var geoLoc string
@@ -214,8 +231,13 @@ func (s *Server) handleSession(ch ssh.Channel, requests <-chan *ssh.Request, fp 
 	sessionTimer := time.AfterFunc(maxSessionDuration, prog.Quit)
 	defer sessionTimer.Stop()
 
-	// 在独立 goroutine 中处理 channel 请求：PTY / shell / 窗口变化
+	// 在独立 goroutine 中处理 channel 请求：PTY / shell / 窗口变化（带 recover 防泄漏）
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[panic] channel requests goroutine (remote=%s): %v", remoteAddr, r)
+			}
+		}()
 		for req := range requests {
 			switch req.Type {
 			case "pty-req":
@@ -303,4 +325,11 @@ func parseRemote(remoteAddr string) (ip, host string) {
 		host = addrs[0]
 	}
 	return ip, host
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
