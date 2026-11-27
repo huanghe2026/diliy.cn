@@ -7,6 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"geoyuan.cn/ssh/internal/questions"
 )
 
 func TestHeaderBarFitsTerminalWidth(t *testing.T) {
@@ -285,4 +287,56 @@ func TestRegisterAndMintIncludeStatusLine(t *testing.T) {
 			t.Error("mint view lost its phase/status footer")
 		}
 	})
+}
+
+func TestWrapTextRespectsDisplayWidth(t *testing.T) {
+	// 中文双宽：每个汉字 2 列
+	s := "在自回归LLM推理中KV Cache的主要作用与实现要点是什么"
+	for width := 4; width <= 40; width++ {
+		for _, ln := range wrapText(s, width) {
+			if got := displayWidth(ln); got > width {
+				t.Errorf("width=%d line %q is %d cols; want <= %d", width, ln, got, width)
+			}
+		}
+	}
+	// 纯 CJK（无空格）换行后不丢失任何字符
+	cjk := "在自回归LLM推理中KV缓存的主要作用与实现要点是什么"
+	if joined := strings.Join(wrapText(cjk, 10), ""); joined != cjk {
+		t.Errorf("wrapText lost content: %q != %q", joined, cjk)
+	}
+}
+
+func TestWrapTextBreaksAtSpace(t *testing.T) {
+	lines := wrapText("hello world foo bar", 8)
+	for _, ln := range lines {
+		if got := displayWidth(ln); got > 8 {
+			t.Errorf("line %q is %d cols; want <= 8", ln, got)
+		}
+	}
+}
+
+func TestQuizViewFitsTerminalWidth(t *testing.T) {
+	qs := questions.All()
+	answers := make([]int, len(qs))
+	for i := range answers {
+		answers[i] = -1
+	}
+	for _, width := range []int{30, 35, 40, 50, 60, 72, 80, 100, 120, 200} {
+		m := Model{
+			phase:      PhaseQuiz,
+			questions:  qs,
+			answers:    answers,
+			cursor:     0,
+			selected:   1,
+			quizSource: "BANK",
+			termWidth:  width,
+			termHeight: 40,
+		}
+		out := m.viewQuiz()
+		for lineNo, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if got := ansi.StringWidth(line); got > width {
+				t.Errorf("width=%d line %d is %d cells: %q", width, lineNo+1, got, ansi.Strip(line))
+			}
+		}
+	}
 }

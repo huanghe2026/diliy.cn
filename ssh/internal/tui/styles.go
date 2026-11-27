@@ -600,16 +600,112 @@ func padTo(s string, width int) string {
 	return s
 }
 
-// adaptiveCardWidth 响应式卡片宽度 — 按 termWidth 取 min(72, termWidth-10)
-// -4 滚动条安全余量 + -2 左右各 2 列 padding
-// 兜底 40 保证窄终端不崩
+// runeWidth 返回单个 rune 的终端显示列宽（中文/emoji 等双宽字符为 2）。
+func runeWidth(r rune) int {
+	return ansi.StringWidth(string(r))
+}
+
+// runesWidth 累加一段 rune 的显示列宽。
+func runesWidth(rs []rune) int {
+	w := 0
+	for _, r := range rs {
+		w += runeWidth(r)
+	}
+	return w
+}
+
+// lastSpaceIndex 返回 rune 切片中最后一个空格的位置，无则 -1。
+func lastSpaceIndex(rs []rune) int {
+	for i := len(rs) - 1; i >= 0; i-- {
+		if rs[i] == ' ' {
+			return i
+		}
+	}
+	return -1
+}
+
+// wrapLine 把单行文本按显示宽度换行，正确处理中文双宽字符。
+// 优先在空格处断行；纯中文无空格时在字符边界硬断，保证任何一行都不超过 width 列。
+func wrapLine(s string, width int) []string {
+	rs := []rune(s)
+	if len(rs) == 0 {
+		return []string{""}
+	}
+	if width <= 0 {
+		return []string{s}
+	}
+
+	var lines []string
+	var line []rune
+	lineW := 0
+	lastSpace := -1 // 当前 line 内最后一个空格的位置
+
+	for _, r := range rs {
+		w := runeWidth(r)
+		if lineW+w > width {
+			if lastSpace >= 0 {
+				// 断在最后一个空格：空格前进入本行，空格后的内容（含当前 r）转到下一行
+				carry := append([]rune{}, line[lastSpace+1:]...)
+				lines = append(lines, string(line[:lastSpace]))
+				line = append(carry, r)
+			} else {
+				if len(line) == 0 {
+					// 单字符即超宽（正常不会发生），兜底吞下
+					line = append(line, r)
+					lineW += w
+					continue
+				}
+				lines = append(lines, string(line))
+				line = append([]rune{}, r)
+			}
+			lineW = runesWidth(line)
+			lastSpace = lastSpaceIndex(line)
+			continue
+		}
+		line = append(line, r)
+		lineW += w
+		if r == ' ' {
+			lastSpace = len(line) - 1
+		}
+	}
+
+	if len(line) > 0 {
+		lines = append(lines, string(line))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+// wrapText 按显示宽度换行，多行输入逐行处理（保留段落换行）。
+func wrapText(s string, width int) []string {
+	var out []string
+	for _, ln := range strings.Split(s, "\n") {
+		out = append(out, wrapLine(ln, width)...)
+	}
+	return out
+}
+
+// adaptiveCardWidth 响应式卡片内容区宽度（含 padding 左右各 2 列）。
+// lipgloss 语义：Width(n) 是内容区宽度，最终卡片总宽 = n + 2（边框）。
+// 因此此处保证 n + 2 ≤ termWidth，任何尺寸都不溢出。
 func adaptiveCardWidth(termWidth int) int {
-	w := termWidth - 10
+	if termWidth <= 12 {
+		return termWidth
+	}
+	w := termWidth - 4 // 2 边框 + 2 滚动条余量
 	if w > 72 {
-		return 72
+		w = 72
 	}
 	if w < 40 {
-		return 40
+		w = 40
+	}
+	if w+2 > termWidth {
+		w = termWidth - 2
+	}
+	if w < 10 {
+		w = 10
 	}
 	return w
 }
@@ -621,72 +717,39 @@ func stripANSI(s string) string {
 
 // RenderCongratsPass 🏆 Geoyuan 专属通过画面 — 霓虹赛博风
 func RenderCongratsPass(score, total int) string {
-	card := fmt.Sprintf(`
-  ╔═══════════════════════════════════════════════════════════════════╗
-  ║  ✨   🎉   🌟   🏅  任务完成  🏅   🌟   🎉   ✨               ║
-  ║                                                                   ║
-  ║    🌍  Geoyuan 准入认证通过                                        ║
-  ║    ✅  30/30  AI 题库 · 区块链存证                                ║
-  ║                                                                   ║
-  ║    ┌─────────────────────────────────────────────────────────┐    ║
-  ║    │  🎴  铸造专属 Geo-Card  ·  绑定经纬度 ·  Polygon 链上    │    ║
-  ║    │  💬  私密聊天室解锁      ·  全网 geo-peer 匹配          │    ║
-  ║    │  💰  市场挂售           ·  链上 P2P 交易               │    ║
-  ║    └─────────────────────────────────────────────────────────┘    ║
-  ║                                                                   ║
-  ║    得分：%d / %d   (%d%%)   ⚡   通过 ≥ %d                       ║
-  ║                                                                   ║
-  ║    ┌─ 下一步 ─────────────────────────────────────────────────┐   ║
-  ║    │  ⏎  进入主菜单  ·  1 → 铸造  ·  2 → 聊天  ·  3 → 市场  │   ║
-  ║    └──────────────────────────────────────────────────────────┘   ║
-  ╚═══════════════════════════════════════════════════════════════════╝
-`, score, total, score*100/total, PassThreshold)
-
-	// 霓虹色渲染
+	pink := lipgloss.NewStyle().Foreground(cNeonPink).Bold(true)
 	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
 	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
 	purple := lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true)
 	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
-	pink := lipgloss.NewStyle().Foreground(cNeonPink).Bold(true)
 
-	// 关键词着色
-	card = strings.ReplaceAll(card, "任务完成", pink.Render("任务完成"))
-	card = strings.ReplaceAll(card, "Geoyuan", purple.Render("Geoyuan"))
-	card = strings.ReplaceAll(card, "得分：", green.Render("得分："))
-	card = strings.ReplaceAll(card, "下一步", cyan.Render("下一步"))
-	card = strings.ReplaceAll(card, "🎴 铸造", gold.Render("🎴 铸造"))
-	card = strings.ReplaceAll(card, "💬", cyan.Render("💬"))
-	card = strings.ReplaceAll(card, "市场挂售", gold.Render("市场挂售"))
-	card = strings.ReplaceAll(card, "✅", green.Render("✅"))
-	card = strings.ReplaceAll(card, "⏎  进入主菜单", purple.Render("⏎  进入主菜单"))
-
-	return card
+	var b strings.Builder
+	b.WriteString(pink.Render("  ✨ 🎉 🌟 🏅 任务完成 🏅 🌟 🎉 ✨") + "\n\n")
+	b.WriteString(purple.Render("  🌍 Geoyuan 准入认证通过") + "\n")
+	b.WriteString(green.Render(fmt.Sprintf("  ✅ %d/%d AI 题库 · 区块链存证", score, total)) + "\n\n")
+	b.WriteString(gold.Render("  🎴 铸造专属 Geo-Card · 绑定经纬度 · Polygon 链上") + "\n")
+	b.WriteString(cyan.Render("  💬 私密聊天室解锁 · 全网 geo-peer 匹配") + "\n")
+	b.WriteString(gold.Render("  💰 市场挂售 · 链上 P2P 交易") + "\n\n")
+	b.WriteString(green.Render(fmt.Sprintf("  得分：%d / %d（%d%%）⚡ 通过 ≥ %d", score, total, score*100/total, PassThreshold)) + "\n\n")
+	b.WriteString(cyan.Render("  下一步") + purple.Render("  ⏎ 进入主菜单 · 1 铸造 · 2 聊天 · 3 市场") + "\n")
+	return b.String()
 }
 
-// RenderTryAgainFail 未通过画面 — 霓虹鼓励版（没有"不通过"，只有"还没"）
+// RenderTryAgainFail 未通过画面 — 霓虹鼓励版（没有"不通过"，只有"还没"）（无边框，外层卡片统一包裹）
 func RenderTryAgainFail(score, total int) string {
-	card := fmt.Sprintf(`
-  ┌───────────────────────────────────────────────────────────────────┐
-  │                                                                   │
-  │     🌊   NOT YET, BUDDY                                           │
-  │                                                                   │
-  │     Score: %d / %d   (%d%%)   ⚡   Need ≥ %d / %d                 │
-  │                                                                   │
-  │     ┌─────────────────────────────────────────────────────────┐   │
-  │     │  🔁  重连 ssh diliy.cn  再挑战一次                       │   │
-  │     │  🧠  AI 每次动态生成 30 新题                             │   │
-  │     │  💡  本地题库无限次练习 · 答案有解析                      │   │
-  │     └─────────────────────────────────────────────────────────┘   │
-  │                                                                   │
-  │     目标线: Pass ≥ %d / %d (%d%%)                                  │
-  │                                                                   │
-  └───────────────────────────────────────────────────────────────────┘
-`, score, total, score*100/total, PassThreshold, total, PassThreshold, total, PassThreshold*100/total)
-
 	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
-	card = strings.ReplaceAll(card, "NOT YET, BUDDY", red.Render("NOT YET, BUDDY"))
+	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted)
 
-	return card
+	var b strings.Builder
+	b.WriteString(red.Render("  🌊 还没通过，再试一次") + "\n\n")
+	b.WriteString(cyan.Render(fmt.Sprintf("  得分：%d / %d（%d%%）⚡ 需要 ≥ %d / %d", score, total, score*100/total, PassThreshold, total)) + "\n\n")
+	b.WriteString(gold.Render("  🔁 重连 ssh diliy.cn 再挑战一次") + "\n")
+	b.WriteString(cyan.Render("  🧠 AI 每次动态生成 30 道新题") + "\n")
+	b.WriteString(dim.Render("  💡 本地题库无限次练习 · 答案有解析") + "\n\n")
+	b.WriteString(red.Render(fmt.Sprintf("  目标线：通过 ≥ %d / %d（%d%%）", PassThreshold, total, PassThreshold*100/total)) + "\n")
+	return b.String()
 }
 
 // ═══════════════════════════════════════════════
@@ -773,9 +836,7 @@ var (
 
 	styleQuestion = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(cNeonCyan).
-			PaddingLeft(1).
-			MarginBottom(1)
+			Foreground(cNeonCyan)
 
 	styleOption = lipgloss.NewStyle().
 			Foreground(cText)
@@ -783,8 +844,7 @@ var (
 	styleOptionSelected = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#000000")).
 				Background(cNeonCyan).
-				Bold(true).
-				Padding(0, 1)
+				Bold(true)
 
 	styleMarkOK  = lipgloss.NewStyle().Bold(true).Foreground(cNeonGreen)
 	styleMarkBad = lipgloss.NewStyle().Bold(true).Foreground(cNeonRed)

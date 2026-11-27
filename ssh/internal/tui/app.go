@@ -217,7 +217,7 @@ func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User
 	default:
 		// Field 0: Username (REQUIRED, 3-20 alnum/hyphen)
 		ti1 := textinput.New()
-		ti1.Placeholder = "3-20 chars · letters / numbers / hyphen"
+		ti1.Placeholder = "3-20 位 · 字母 / 数字 / 连字符"
 		ti1.CharLimit = 120 // 同时容纳 :redeem + 32 字符 token；用户名校验仍限 20
 		ti1.Prompt = "> "
 		ti1.Focus()
@@ -225,14 +225,14 @@ func New(s *store.Store, gen *questiongen.Generator, fp string, user *store.User
 
 		// Field 1: Display Name (optional, 2-30)
 		ti2 := textinput.New()
-		ti2.Placeholder = "How should we call you?"
+		ti2.Placeholder = "我们该怎么称呼你？"
 		ti2.CharLimit = 30
 		ti2.Prompt = "> "
 		m.displayInput = ti2
 
 		// Field 2: Tagline (optional, ≤80)
 		ti3 := textinput.New()
-		ti3.Placeholder = "One line about you / your project"
+		ti3.Placeholder = "一句话介绍你自己 / 你的项目"
 		ti3.CharLimit = 80
 		ti3.Prompt = "> "
 		m.taglineInput = ti3
@@ -1002,12 +1002,12 @@ func (m Model) viewRegister() string {
 		"一句话介绍你自己 / 你的项目",
 		"选择你的首选语言",
 	}
-	content.WriteString(cyan.Render(fmt.Sprintf("  ◆ Step %d/4  ·  %s", m.registerStep+1, stepTitles[m.registerStep])) + "\n")
+	content.WriteString(cyan.Render(fmt.Sprintf("  ◆ 第 %d/4 步  ·  %s", m.registerStep+1, stepTitles[m.registerStep])) + "\n")
 	content.WriteString(dim.Render("     "+stepDescs[m.registerStep]) + "\n\n")
 
 	// ═══ 字段 0: Username ═══
 	content.WriteString(m.renderFieldRow(
-		"  Username",        // label
+		"  用户名",          // label
 		m.nameInput.Value(), // value
 		0,                   // step index
 		true,                // required
@@ -1017,7 +1017,7 @@ func (m Model) viewRegister() string {
 
 	// ═══ 字段 1: Display Name ═══
 	content.WriteString(m.renderFieldRow(
-		"  Display Name",
+		"  显示名",
 		m.displayInput.Value(),
 		1,
 		false, // optional
@@ -1027,7 +1027,7 @@ func (m Model) viewRegister() string {
 
 	// ═══ 字段 2: Tagline ═══
 	content.WriteString(m.renderFieldRow(
-		"  Tagline",
+		"  签名 / 简介",
 		m.taglineInput.Value(),
 		2,
 		false,
@@ -1036,7 +1036,7 @@ func (m Model) viewRegister() string {
 	content.WriteString("\n")
 
 	// ═══ 字段 3: Language ═══
-	langRow := "  Language   "
+	langRow := "  语言    "
 	// zh
 	zhFlag := "🇨🇳 中文"
 	enFlag := "🇺🇸 English"
@@ -1059,9 +1059,9 @@ func (m Model) viewRegister() string {
 	}
 	langRow += zhStyle + "   " + enStyle
 	if m.registerStep != 3 {
-		langRow += "   " + green.Render("✅ ok")
+		langRow += "   " + green.Render("✅ 已选")
 	} else {
-		langRow += "   " + dim.Render("(← → or 1/2)")
+		langRow += "   " + dim.Render("(← → 或 1/2)")
 	}
 	content.WriteString(langRow)
 	content.WriteString("\n\n")
@@ -1072,7 +1072,7 @@ func (m Model) viewRegister() string {
 	}
 
 	// ═══ 底部快捷键 hint ═══
-	content.WriteString(dim.Render("  💡  Tab/↓ Next  ·  Shift+Tab/↑ Prev  ·  Enter Submit  ·  :skip all  ·  :redeem <token>"))
+	content.WriteString(dim.Render("  💡  Tab/↓ 下一项 · Shift+Tab/↑ 上一项 · Enter 提交 · :skip 跳过 · :redeem <token> 兑换"))
 
 	// ═══ 组装卡片 ═══
 	card := lipgloss.NewStyle().
@@ -1104,7 +1104,7 @@ func (m Model) renderFieldRow(label, value string, step int, required bool, vali
 	// label 行
 	labelStr := label
 	if !required {
-		labelStr += dim.Render(" (optional)")
+		labelStr += dim.Render("（可选）")
 	}
 	b.WriteString(labelStr + "  ")
 
@@ -1134,7 +1134,7 @@ func (m Model) renderFieldRow(label, value string, step int, required bool, vali
 	} else {
 		// 非当前字段：直接显示值 + 状态
 		if displayVal == "" {
-			b.WriteString(dim.Render("(empty)"))
+			b.WriteString(dim.Render("（空）"))
 		} else {
 			b.WriteString(displayVal)
 		}
@@ -1146,7 +1146,7 @@ func (m Model) renderFieldRow(label, value string, step int, required bool, vali
 		if value == "" {
 			statusMark = dim.Render("")
 		} else if valid {
-			statusMark = green.Render("✅ ok")
+			statusMark = green.Render("✅ 有效")
 		} else {
 			statusMark = red.Render("⚠")
 		}
@@ -1158,7 +1158,7 @@ func (m Model) renderFieldRow(label, value string, step int, required bool, vali
 				statusMark = "" // optional 空不算问题
 			}
 		} else if valid {
-			statusMark = green.Render("✅ ok")
+			statusMark = green.Render("✅ 有效")
 		} else {
 			statusMark = red.Render("⚠")
 		}
@@ -1278,16 +1278,16 @@ func (m Model) updateRegister(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.registerStep {
 		case 0: // username
 			if !usernameRe.MatchString(strings.TrimSpace(m.nameInput.Value())) {
-				m.inputErr = "Username: 3-20 chars · letters / numbers / hyphen only"
+				m.inputErr = "用户名：3-20 位，仅字母 / 数字 / 连字符"
 				return m, cmd
 			}
 			exist, err := m.store.GetUserByUsername(strings.TrimSpace(m.nameInput.Value()))
 			if err != nil {
-				m.inputErr = "Check failed: " + err.Error()
+				m.inputErr = "校验失败：" + err.Error()
 				return m, cmd
 			}
 			if exist != nil {
-				m.inputErr = "Username already taken"
+				m.inputErr = "用户名已被占用"
 				return m, cmd
 			}
 			m.inputErr = ""
@@ -1349,9 +1349,9 @@ func (m Model) updateRegister(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.registerStep == 0 {
 		v := strings.TrimSpace(m.nameInput.Value())
 		if v == ":skip" {
-			m.inputErr = "💡  Press Enter to submit with username only (skip optional fields)"
+			m.inputErr = "💡  按 Enter 仅用用户名提交（跳过可选字段）"
 		} else if strings.HasPrefix(v, ":redeem") || strings.HasPrefix(v, "/redeem") {
-			m.inputErr = "💡  Press Enter to redeem token"
+			m.inputErr = "💡  按 Enter 兑换 token"
 		} else {
 			// 实时 hint 清掉错误（如果输入有变化）
 			if m.inputErr != "" && !strings.HasPrefix(m.inputErr, "💡") {
@@ -1371,23 +1371,23 @@ func (m Model) submitRegister() (tea.Model, tea.Cmd) {
 
 	// 最终校验
 	if !usernameRe.MatchString(username) {
-		m.inputErr = "Username: 3-20 chars · letters / numbers / hyphen only"
+		m.inputErr = "用户名：3-20 位，仅字母 / 数字 / 连字符"
 		m.focusRegisterStep(0)
 		return m, textinput.Blink
 	}
 	if displayName != "" && !displayNameRe.MatchString(displayName) {
-		m.inputErr = "Display name: 2-30 letters / spaces / hyphens (or leave empty)"
+		m.inputErr = "显示名：2-30 位字母 / 空格 / 连字符（可留空）"
 		m.focusRegisterStep(1)
 		return m, textinput.Blink
 	}
 
 	exist, err := m.store.GetUserByUsername(username)
 	if err != nil {
-		m.inputErr = "DB error: " + err.Error()
+		m.inputErr = "数据库错误：" + err.Error()
 		return m, nil
 	}
 	if exist != nil {
-		m.inputErr = "Username already taken"
+		m.inputErr = "用户名已被占用"
 		m.focusRegisterStep(0)
 		return m, textinput.Blink
 	}
@@ -1593,71 +1593,114 @@ func (m Model) viewQuiz() string {
 
 	b.WriteString(m.headerBar())
 
+	cardWidth := adaptiveCardWidth(m.termWidth)
+	// 内容区含 padding 左右各 2；文本可用宽 = cardWidth - 4
+	innerWidth := cardWidth - 4
+	if innerWidth < 10 {
+		innerWidth = 10
+	}
+
 	var content strings.Builder
-	// 📊 双层进度条：像素 bar + 每题 dot map
-	content.WriteString(renderQuizProgress(m.cursor, total, m.answers, answered))
+
+	// 📊 进度（自适应宽度）
+	content.WriteString(renderQuizProgress(m.cursor, total, m.answers, answered, innerWidth))
 	content.WriteString("\n\n")
 
-	// ❓ 题目卡片
-	card := fmt.Sprintf("%s\n\n", styleQuestion.Render(fmt.Sprintf("❓  Q%d.  %s", m.cursor+1, q.Q)))
-
-	for i, opt := range q.Options {
-		var line string
-		letter := string(rune('A' + i))
-		marker := "  "
-		if i == m.selected {
-			line = styleOptionSelected.Render(fmt.Sprintf("%s ➤ %s. %s", marker, letter, opt))
-		} else {
-			line = styleOption.Render(fmt.Sprintf("%s    %s. %s", marker, letter, opt))
-		}
-		card += line + "\n"
+	// ❓ 题目（按 innerWidth 换行，正确处理中文双宽）
+	question := fmt.Sprintf("❓ Q%d. %s", m.cursor+1, q.Q)
+	for _, ln := range wrapText(question, innerWidth) {
+		content.WriteString(styleQuestion.Render(ln) + "\n")
 	}
-
-	content.WriteString(styleCard.Render(card))
 	content.WriteString("\n")
 
+	// 选项（换行，续行缩进对齐到选项文本起始列）
+	for i, opt := range q.Options {
+		letter := string(rune('A' + i))
+		sel := i == m.selected
+		marker := "  "
+		if sel {
+			marker = "➤ "
+		}
+		markerW := displayWidth(marker)
+		text := letter + ". " + opt
+		lines := wrapText(text, innerWidth-markerW)
+		for j, ln := range lines {
+			var out string
+			if j == 0 {
+				out = marker + ln
+			} else {
+				out = strings.Repeat(" ", markerW) + ln
+			}
+			if sel {
+				content.WriteString(styleOptionSelected.Render(out) + "\n")
+			} else {
+				content.WriteString(styleOption.Render(out) + "\n")
+			}
+		}
+	}
+	content.WriteString("\n")
+
+	// 底部 hint（换行防止窄终端溢出）
 	var hint string
 	if m.cursor == total-1 {
-		hint = "  ↑↓/jk 选择  ·  1-4 快选  ·  ⏎ 提交最终答案  ·  Esc 退出"
+		hint = "↑↓/jk 选择 · 1-4 快选 · ⏎ 提交最终答案 · Esc 退出"
 	} else {
-		hint = "  ↑↓/jk 选择  ·  1-4 快选并前进  ·  ⏎ 提交前进  ·  Esc 退出"
+		hint = "↑↓/jk 选择 · 1-4 快选并前进 · ⏎ 提交前进 · Esc 退出"
 	}
-	// 🧠 题目来源标记 — 预生成题库 vs 内置 fallback
+	var srcLine string
 	if m.quizSource == "LOCAL" {
-		hint = lipgloss.NewStyle().Foreground(cNeonGold).Render("  ⚠ 预生成题库不可用 · 使用内置题库") + "\n" +
-			lipgloss.NewStyle().Foreground(cMuted).Render(hint)
+		srcLine = "⚠ 预生成题库不可用 · 使用内置题库"
 	} else {
-		hint = lipgloss.NewStyle().Foreground(cNeonCyan).Render("  🧠 预生成 AI 题库 · 随机一套") + "\n" +
-			lipgloss.NewStyle().Foreground(cMuted).Render(hint)
+		srcLine = "🧠 预生成 AI 题库 · 随机一套"
 	}
-	content.WriteString(hint)
+	srcStyle := lipgloss.NewStyle().Foreground(cNeonGold)
+	if m.quizSource != "LOCAL" {
+		srcStyle = lipgloss.NewStyle().Foreground(cNeonCyan)
+	}
+	for _, ln := range wrapText(srcLine, innerWidth) {
+		content.WriteString(srcStyle.Render(ln) + "\n")
+	}
+	for _, ln := range wrapText(hint, innerWidth) {
+		content.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(ln) + "\n")
+	}
 
 	b.WriteString(lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(adaptiveCardWidth(m.termWidth)).
+		Width(cardWidth).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
 	return b.String()
 }
 
-// renderQuizProgress 双层 Quiz 进度：像素 bar + 每题 dot map
-// dot map 视觉密度高但清晰 — 用户一眼知道自己在哪、哪些答了、还剩多少
-func renderQuizProgress(cur, total int, answers []int, answered int) string {
+// renderQuizProgress 双层 Quiz 进度：像素 bar + 每题 dot map（自适应宽度）
+func renderQuizProgress(cur, total int, answers []int, answered, width int) string {
 	if total <= 0 {
 		return ""
 	}
 
-	// 第一层：像素 bar (36 格)
-	barWidth := 36
+	// 极窄终端退化为单行简洁进度
+	if width < 24 {
+		return lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true).
+			Render(fmt.Sprintf("第 %d/%d 题 · 已答 %d", cur+1, total, answered))
+	}
+
+	// 第一层：像素 bar（自适应宽度）
+	countText := fmt.Sprintf("%d/%d", answered, total)
+	pctText := fmt.Sprintf("(%d%%)", answered*100/total)
+	// 📊(2) + 空格(1) + "  "(2) + count + "  "(2) + pct
+	overhead := 7 + displayWidth(countText) + displayWidth(pctText)
+	barWidth := width - overhead
+	if barWidth < 4 {
+		barWidth = 4
+	}
 	filled := answered * barWidth / total
 	empty := barWidth - filled
 
 	barFilled := lipgloss.NewStyle().Foreground(cNeonGreen).Render(strings.Repeat("█", filled))
 	barEmpty := lipgloss.NewStyle().Foreground(cDim).Render(strings.Repeat("░", empty))
-	pct := answered * 100 / total
 	pctStyle := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
 	countStyle := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
 
@@ -1666,15 +1709,11 @@ func renderQuizProgress(cur, total int, answers []int, answered int) string {
 	barLine.WriteString(barFilled)
 	barLine.WriteString(barEmpty)
 	barLine.WriteString("  ")
-	barLine.WriteString(countStyle.Render(fmt.Sprintf("%d/%d", answered, total)))
+	barLine.WriteString(countStyle.Render(countText))
 	barLine.WriteString("  ")
-	barLine.WriteString(pctStyle.Render(fmt.Sprintf("(%d%%)", pct)))
+	barLine.WriteString(pctStyle.Render(pctText))
 
-	// 第二层：每题 dot map — 30 题用 ●/○ 一行显示
-	//  ● = 已答  (green)
-	//  ◎ = 当前题 (yellow 高亮)
-	//  ○ = 未到达 (dim)
-	// 为了不溢出，每 5 个加一个小分隔
+	// 第二层：每题 dot map —— 只有一行放得下时才显示，否则省略
 	var dotLine strings.Builder
 	dotLine.WriteString("   ")
 	for i := 0; i < total; i++ {
@@ -1682,19 +1721,22 @@ func renderQuizProgress(cur, total int, answers []int, answered int) string {
 			dotLine.WriteString(" ") // 每 5 题一个空格分隔
 		}
 		var dot string
-		if i == cur {
+		switch {
+		case i == cur:
 			dot = lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("◎")
-		} else if i < cur || answers[i] >= 0 {
+		case i < cur || answers[i] >= 0:
 			dot = lipgloss.NewStyle().Foreground(cNeonGreen).Render("●")
-		} else {
+		default:
 			dot = lipgloss.NewStyle().Foreground(cDim).Render("○")
 		}
 		dotLine.WriteString(dot)
 	}
-	// 加图例
-	dotLine.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(fmt.Sprintf("  ← Q%d 当前", cur+1)))
+	dotLine.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render(fmt.Sprintf("  ← Q%d", cur+1)))
 
-	return barLine.String() + "\n" + dotLine.String()
+	if dotStr := dotLine.String(); displayWidth(dotStr) <= width {
+		return barLine.String() + "\n" + dotStr
+	}
+	return barLine.String()
 }
 
 // startQuizCmd — 从预生成题库随机取一套（秒开，无需实时 AI 生成）
@@ -1786,42 +1828,44 @@ func (m Model) viewResult() string {
 
 	b.WriteString(m.headerBar())
 
+	cardWidth := adaptiveCardWidth(m.termWidth)
+	innerWidth := cardWidth - 4
+	if innerWidth < 10 {
+		innerWidth = 10
+	}
+
 	var content strings.Builder
 
 	if m.passed {
 		// ── PASS: 霓虹恭喜画面 ──
 		content.WriteString(RenderCongratsPass(m.score, total))
 		content.WriteString("\n")
-		content.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
+		content.WriteString(renderScoreDashboard(m.score, total, pct, m.passed, innerWidth))
 		content.WriteString("\n\n")
 
 		content.WriteString(styleSuccessText.Render(
-			"  ✓  Welcome aboard, " + m.user.Username + "!\n" +
-				"  ✓  Private chat room unlocked\n" +
-				"  ✓  All members are waiting for you",
+			"  ✓  欢迎加入，" + m.user.Username + "！\n" +
+				"  ✓  私密聊天室已解锁\n" +
+				"  ✓  全体成员都在等你",
 		))
 		content.WriteString("\n\n")
-		content.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter to open main menu  ·  q/esc to exit"))
+		content.WriteString(lipgloss.NewStyle().Foreground(cNeonCyan).Render("  ⏎  Enter 打开主菜单  ·  q/Esc 退出"))
 	} else {
 		// ── FAIL: 霓虹未通过画面 ──
 		content.WriteString(RenderTryAgainFail(m.score, total))
 		content.WriteString("\n")
-		content.WriteString(renderScoreDashboard(m.score, total, pct, m.passed))
+		content.WriteString(renderScoreDashboard(m.score, total, pct, m.passed, innerWidth))
 		content.WriteString("\n\n")
 
 		content.WriteString(styleDangerText.Render(
-			fmt.Sprintf("  ✗  Not yet — need ≥ %d / %d to pass", PassThreshold, total)))
+			fmt.Sprintf("  ✗  还差一点 — 需要 ≥ %d / %d 才能通过", PassThreshold, total)))
 		content.WriteString("\n\n")
-		content.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  Reconnect via ssh diliy.cn to try again  ·  ⏎/q to exit"))
+		content.WriteString(lipgloss.NewStyle().Foreground(cMuted).Render("  重新 ssh diliy.cn 再试一次  ·  ⏎/q 退出"))
 	}
 
 	// 答题回顾（前 8 题）
 	content.WriteString("\n\n")
-	reviewHeader := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render(
-		"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  答题回顾（前 8 题）  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n",
-	)
-	content.WriteString(reviewHeader)
-	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render("━━━ 答题回顾（前 8 题）━━━") + "\n\n")
 	limit := 8
 	if len(m.questions) < limit {
 		limit = len(m.questions)
@@ -1834,40 +1878,48 @@ func (m Model) viewResult() string {
 		if ok {
 			mark = styleMarkOK.Render("  ✓")
 		}
-		content.WriteString(fmt.Sprintf("%s  %d. %s\n", mark, i+1, q.Q))
+		// 题目换行，避免中文双宽溢出边框
+		qText := fmt.Sprintf("%d. %s", i+1, q.Q)
+		qLines := wrapText(qText, innerWidth-displayWidth("  ✗  "))
+		for j, ln := range qLines {
+			if j == 0 {
+				content.WriteString(fmt.Sprintf("%s  %s\n", mark, ln))
+			} else {
+				content.WriteString(fmt.Sprintf("     %s\n", ln))
+			}
+		}
 		if !ok {
-			content.WriteString(styleExplain.Render(fmt.Sprintf(
-				"  Your answer: %s   Correct: %s   💡 %s",
-				letter(ans), letter(q.Answer), q.Explain)) + "\n")
+			explain := fmt.Sprintf("你的答案：%s   正确答案：%s   💡 %s", letter(ans), letter(q.Answer), q.Explain)
+			for _, ln := range wrapText(explain, innerWidth-2) {
+				content.WriteString(styleExplain.Render("  " + ln) + "\n")
+			}
 		}
 		content.WriteString("\n")
 	}
 	if len(m.questions) > limit {
-		content.WriteString(styleHint.Render(fmt.Sprintf("  ... and %d more questions omitted", len(m.questions)-limit)))
+		content.WriteString(styleHint.Render(fmt.Sprintf("... 另有 %d 题未展示", len(m.questions)-limit)))
 	}
 
 	b.WriteString(lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(cNeonPurple).
 		Padding(0, 2).
-		Width(adaptiveCardWidth(m.termWidth)).
+		Width(cardWidth).
 		Render(content.String()))
 
 	b.WriteString(m.statusLine())
 	return b.String()
 }
 
-// renderScoreDashboard 渲染一个精致的分数仪表盘
-func renderScoreDashboard(score, total, pct int, passed bool) string {
+// renderScoreDashboard 渲染分数仪表盘（无边框，由外层卡片统一包裹）
+func renderScoreDashboard(score, total, pct int, passed bool, width int) string {
 	var b strings.Builder
 
-	color := colorDanger
-	borderStyle := styleCardDanger
-	bigScoreColor := styleScoreBig
+	bigScoreColor := lipgloss.NewStyle().Bold(true).Foreground(colorGold)
+	pctColor := colorDanger
 	if passed {
-		color = colorSuccess
-		borderStyle = styleCardSuccess
-		bigScoreColor = lipgloss.NewStyle().Bold(true).Foreground(colorGold).Align(lipgloss.Center)
+		bigScoreColor = lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
+		pctColor = colorSuccess
 	}
 
 	// 大分数
@@ -1875,38 +1927,35 @@ func renderScoreDashboard(score, total, pct int, passed bool) string {
 	b.WriteString("\n")
 
 	// 百分比 + 进度条
-	var pctStyle lipgloss.Style
-	if passed {
-		pctStyle = lipgloss.NewStyle().Foreground(colorSuccess).Bold(true)
-	} else {
-		pctStyle = lipgloss.NewStyle().Foreground(colorDanger).Bold(true)
-	}
-	b.WriteString(pctStyle.Render(fmt.Sprintf("%d%%", pct)))
+	pctStr := fmt.Sprintf("%d%%", pct)
+	b.WriteString(lipgloss.NewStyle().Foreground(pctColor).Bold(true).Render(pctStr))
 	b.WriteString("  ")
-	b.WriteString(renderFancyProgress(score, total))
+	b.WriteString(renderFancyProgress(score, total, width-displayWidth(pctStr+"  ")))
 
 	// 通过线标记
 	threshPct := PassThreshold * 100 / total
-	b.WriteString(fmt.Sprintf("\n\n目标线: ≥ %d 分 (%d%%)", PassThreshold, threshPct))
+	b.WriteString(fmt.Sprintf("\n\n目标线：≥ %d 分（%d%%）", PassThreshold, threshPct))
 
-	_ = color
-	return borderStyle.Render(b.String())
+	return b.String()
 }
 
-// renderFancyProgress 精致渐变进度条
-func renderFancyProgress(cur, total int) string {
+// renderFancyProgress 精致渐变进度条（自适应宽度）
+func renderFancyProgress(cur, total, width int) string {
 	if total <= 0 {
 		return ""
 	}
-	width := 40
-	filled := cur * width / total
-	if filled > width {
-		filled = width
+	suffix := fmt.Sprintf("  %d/%d  (%d%%)", cur, total, cur*100/total)
+	barWidth := width - displayWidth("[]") - displayWidth(suffix)
+	if barWidth < 4 {
+		barWidth = 4
 	}
-
-	// 渐变填充
-	filledStr := strings.Repeat("█", filled)
-	emptyStr := strings.Repeat("░", width-filled)
+	if barWidth > 40 {
+		barWidth = 40
+	}
+	filled := cur * barWidth / total
+	if filled > barWidth {
+		filled = barWidth
+	}
 
 	filledColor := colorDanger
 	if cur*100/total >= 80 {
@@ -1916,10 +1965,10 @@ func renderFancyProgress(cur, total int) string {
 		filledColor = colorSuccess
 	}
 
-	bar := lipgloss.NewStyle().Foreground(filledColor).Render(filledStr) +
-		lipgloss.NewStyle().Foreground(colorDim).Render(emptyStr)
+	bar := lipgloss.NewStyle().Foreground(filledColor).Render(strings.Repeat("█", filled)) +
+		lipgloss.NewStyle().Foreground(colorDim).Render(strings.Repeat("░", barWidth-filled))
 
-	return fmt.Sprintf("[%s]  %d/%d  (%d%%)", bar, cur, total, cur*100/total)
+	return fmt.Sprintf("[%s]%s", bar, suffix)
 }
 
 // ═══════════════════════════════════════════════
@@ -3162,7 +3211,6 @@ func maticToWei(s string) (*big.Int, error) {
 
 func (m Model) viewQuitConfirm() string {
 	// 纯 modal — 不渲染底层（避免 textinput 光标泄漏 / 半透明露底）
-	// 只在顶部空 3 行让视觉居中
 	var b strings.Builder
 	b.WriteString(strings.Repeat("\n", 2)) // 顶部 padding
 
@@ -3171,23 +3219,21 @@ func (m Model) viewQuitConfirm() string {
 	neon := lipgloss.NewStyle().Foreground(lipgloss.Color("201")).Bold(true)
 	gold := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
 
-	// 画一个居中的 modal 框（72 宽，适配各种终端）
-	boxTop := "┌────────────────────────────────────────────────────────────┐"
-	boxMid := "│  " + warn.Render("⚠  What do you want to do?") + "                                  │"
-	boxLine := "│                                                              │"
-	yesLine := "│     " + green.Render("y / Enter") + "  → Disconnect SSH                               │"
-	switchLine := "│     " + gold.Render("u") + "        → 切换用户（清除会话）                     │"
-	noLine := "│     " + neon.Render("n / Esc") + "  → Stay here (back to " + phaseLabel(m.prevPhase) + strings.Repeat(" ", 14-len(phaseLabel(m.prevPhase))) + ") │"
-	boxBot := "└────────────────────────────────────────────────────────────┘"
+	content := strings.Join([]string{
+		warn.Render("⚠  你想做什么？"),
+		"",
+		"  " + green.Render("y / Enter") + "  →  断开 SSH 连接",
+		"  " + gold.Render("u") + "        →  切换用户（清除会话）",
+		"  " + neon.Render("n / Esc") + "  →  留在当前页（回到" + phaseLabel(m.prevPhase) + "）",
+	}, "\n")
 
-	b.WriteString(boxTop + "\n")
-	b.WriteString(boxMid + "\n")
-	b.WriteString(boxLine + "\n")
-	b.WriteString(boxLine + "\n")
-	b.WriteString(yesLine + "\n")
-	b.WriteString(switchLine + "\n")
-	b.WriteString(noLine + "\n")
-	b.WriteString(boxBot + "\n")
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("201")).
+		Padding(0, 2).
+		Render(content)
+
+	b.WriteString(lipgloss.PlaceHorizontal(m.termWidth, lipgloss.Center, box))
 	b.WriteString("\n")
 	b.WriteString(hintBar("y → 退出", "u → 切换用户", "n / Esc → 留在当前页"))
 
