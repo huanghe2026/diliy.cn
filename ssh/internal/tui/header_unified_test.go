@@ -238,8 +238,8 @@ func TestStatusLineFitsTerminalWidth(t *testing.T) {
 func TestStatusLineReportsOfflineChain(t *testing.T) {
 	m := Model{phase: PhaseMenu, termWidth: 100, termHeight: 30}
 	plain := ansi.Strip(m.statusLine())
-	if !strings.Contains(plain, "Offline") {
-		t.Error("offline statusLine did not show Offline")
+	if !strings.Contains(plain, "离线") {
+		t.Error("offline statusLine did not show 离线")
 	}
 	if strings.Contains(plain, "Amoy") {
 		t.Error("offline statusLine still claimed an Amoy connection")
@@ -248,8 +248,8 @@ func TestStatusLineReportsOfflineChain(t *testing.T) {
 
 func TestStatusLineShowsQuizLoadingBadge(t *testing.T) {
 	m := Model{phase: PhaseQuizLoading, termWidth: 100, termHeight: 30}
-	if plain := ansi.Strip(m.statusLine()); !strings.Contains(plain, "LOADING") {
-		t.Error("quiz-loading statusLine did not show LOADING")
+	if plain := ansi.Strip(m.statusLine()); !strings.Contains(plain, "加载中") {
+		t.Error("quiz-loading statusLine did not show 加载中")
 	}
 }
 
@@ -273,7 +273,7 @@ func TestRegisterAndMintIncludeStatusLine(t *testing.T) {
 	t.Run("register", func(t *testing.T) {
 		m := Model{phase: PhaseRegister, termWidth: 100, termHeight: 40}
 		plain := ansi.Strip(m.View())
-		if !strings.Contains(plain, "REGISTER") || !strings.Contains(plain, "Offline") {
+		if !strings.Contains(plain, "注册") || !strings.Contains(plain, "离线") {
 			t.Error("register view lost its phase/status footer")
 		}
 	})
@@ -281,7 +281,7 @@ func TestRegisterAndMintIncludeStatusLine(t *testing.T) {
 		m := Model{phase: PhaseMintCard, termWidth: 100, termHeight: 40}
 		m.mintView.step = 1
 		plain := ansi.Strip(m.View())
-		if !strings.Contains(plain, "MINT") || !strings.Contains(plain, "Offline") {
+		if !strings.Contains(plain, "铸造") || !strings.Contains(plain, "离线") {
 			t.Error("mint view lost its phase/status footer")
 		}
 	})

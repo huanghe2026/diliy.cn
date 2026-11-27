@@ -720,7 +720,7 @@ func (m Model) statusLine() string {
 			wallet = cyan.Render("🔑 " + addr)
 		}
 	}
-	chain := dim.Render("○ Offline")
+	chain := dim.Render("○ 离线")
 	if m.chainReady() {
 		chain = green.Render("✅ Amoy")
 	}
@@ -761,35 +761,35 @@ func compactPhaseBadge(p Phase) string {
 	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
 	switch p {
 	case PhaseRegister:
-		return gold.Render("REG")
+		return gold.Render("注册")
 	case PhaseQuizLoading:
-		return gold.Render("LOAD")
+		return gold.Render("加载")
 	case PhaseQuiz:
-		return gold.Render("QUIZ")
+		return gold.Render("答题")
 	case PhaseResult:
-		return gold.Render("RESULT")
+		return gold.Render("结果")
 	case PhaseWelcome:
-		return gold.Render("HOME")
+		return gold.Render("首页")
 	case PhaseRetry:
-		return gold.Render("RETRY")
+		return gold.Render("重试")
 	case PhaseMenu:
-		return gold.Render("MENU")
+		return gold.Render("主菜单")
 	case PhaseMintCard:
-		return gold.Render("MINT")
+		return gold.Render("铸造")
 	case PhaseMyCards:
-		return gold.Render("CARDS")
+		return gold.Render("卡片")
 	case PhaseMarket:
-		return gold.Render("MARKET")
+		return gold.Render("市场")
 	case PhaseListCard:
-		return gold.Render("LIST")
+		return gold.Render("挂售")
 	case PhaseChat:
-		return gold.Render("CHAT")
+		return gold.Render("聊天")
 	case PhaseQuitConfirm:
-		return gold.Render("QUIT")
+		return gold.Render("退出")
 	case PhaseHelp:
-		return gold.Render("HELP")
+		return gold.Render("帮助")
 	default:
-		return gold.Render("HOME")
+		return gold.Render("首页")
 	}
 }
 
@@ -798,31 +798,35 @@ func phaseBadge(p Phase) string {
 	gold := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true)
 	switch p {
 	case PhaseRegister:
-		return gold.Render("📝 REGISTER")
+		return gold.Render("📝 注册")
 	case PhaseQuizLoading:
-		return gold.Render("⏳ LOADING")
+		return gold.Render("⏳ 加载中")
 	case PhaseQuiz:
-		return gold.Render("🧠 QUIZ")
+		return gold.Render("🧠 答题")
 	case PhaseResult:
-		return gold.Render("🏁 RESULT")
+		return gold.Render("🏁 结果")
+	case PhaseWelcome:
+		return gold.Render("👋 欢迎")
+	case PhaseRetry:
+		return gold.Render("🔁 重试")
 	case PhaseMenu:
-		return gold.Render("🏠 MENU")
+		return gold.Render("🏠 主菜单")
 	case PhaseMintCard:
-		return gold.Render("🎴 MINT")
+		return gold.Render("🎴 铸造")
 	case PhaseMyCards:
-		return gold.Render("🃏 MY CARDS")
+		return gold.Render("🃏 我的卡片")
 	case PhaseMarket:
-		return gold.Render("🛒 MARKET")
+		return gold.Render("🛒 市场")
 	case PhaseListCard:
-		return gold.Render("📋 LIST FOR SALE")
+		return gold.Render("📋 挂售")
 	case PhaseChat:
-		return gold.Render("💬 CHAT")
+		return gold.Render("💬 聊天室")
 	case PhaseQuitConfirm:
-		return gold.Render("⚠ QUIT?")
+		return gold.Render("⚠ 退出?")
 	case PhaseHelp:
-		return gold.Render("❓ HELP")
+		return gold.Render("❓ 帮助")
 	}
-	return gold.Render("HOME")
+	return gold.Render("首页")
 }
 
 // headerBar renders a complete responsive logo above a single-cell-safe navigation line.
@@ -1814,7 +1818,7 @@ func (m Model) viewResult() string {
 	// 答题回顾（前 8 题）
 	content.WriteString("\n\n")
 	reviewHeader := lipgloss.NewStyle().Foreground(cNeonGold).Bold(true).Render(
-		"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  QUIZ REVIEW (first 8)  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n",
+		"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  答题回顾（前 8 题）  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n",
 	)
 	content.WriteString(reviewHeader)
 	content.WriteString("\n")
@@ -2628,7 +2632,7 @@ func (m Model) viewMyCards() string {
 	var content strings.Builder
 
 	if m.myCardsLoading {
-		content.WriteString("  " + m.spinner() + "  Loading your cards from Polygon Amoy...\n")
+		content.WriteString("  " + m.spinner() + "  正在从 Polygon Amoy 加载你的卡片...\n")
 		content.WriteString(dim.Render("  (this may take 10-30 seconds)\n"))
 	} else if m.myCardsErr != nil {
 		content.WriteString(red.Render(fmt.Sprintf("  ✗ Failed to load cards: %v", m.myCardsErr)) + "\n\n")
@@ -2637,7 +2641,7 @@ func (m Model) viewMyCards() string {
 		// 我的卡片列表
 		content.WriteString(neon.Render("  🃏 Your Geoyuan Cards") + "\n")
 		if m.chainReady() {
-			content.WriteString(green.Render("  ✓ Connected to Polygon Amoy") + "\n")
+			content.WriteString(green.Render("  ✓ 已连接 Polygon Amoy") + "\n")
 		} else {
 			content.WriteString(dim.Render("  (chain not ready — showing cache only)") + "\n")
 		}
@@ -2957,7 +2961,7 @@ func (m Model) viewListCard() string {
 	var content strings.Builder
 
 	if m.listCardLoading {
-		content.WriteString("  " + m.spinner() + "  Submitting listing to Polygon Amoy...\n")
+		content.WriteString("  " + m.spinner() + "  正在向 Polygon Amoy 提交挂售...\n")
 		content.WriteString(dim.Render("  (waiting for receipt, 10-60s)") + "\n")
 		content.WriteString(hintBar("waiting..."))
 	} else if m.listCardDone {
@@ -3573,7 +3577,7 @@ func (m Model) viewDiscover() string {
 
 	var content strings.Builder
 	if m.discoverLoading {
-		content.WriteString("  " + m.spinner() + "  Loading all cards from Polygon Amoy...\n")
+		content.WriteString("  " + m.spinner() + "  正在从 Polygon Amoy 加载所有卡片...\n")
 	} else if m.discoverErr != nil {
 		content.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.discoverErr)) + "\n\n")
 		content.WriteString(dim.Render("  R retry · Esc back\n"))
