@@ -174,15 +174,15 @@ func TestDisplayWidthUsesTerminalCells(t *testing.T) {
 
 func TestHeaderBarRespondsToResize(t *testing.T) {
 	m := Model{phase: PhaseMenu, termWidth: 160, termHeight: 30}
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 30})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 35, Height: 30})
 	resized := updated.(Model)
 	plain := ansi.Strip(resized.headerBar())
 	if !strings.Contains(plain, "geoyuan.com") {
 		t.Error("narrow terminal did not select the complete fallback logo")
 	}
 	for lineNo, line := range strings.Split(strings.TrimRight(resized.headerBar(), "\n"), "\n") {
-		if got := ansi.StringWidth(line); got > 40 {
-			t.Errorf("resized line %d is %d cells wide; want at most 40", lineNo+1, got)
+		if got := ansi.StringWidth(line); got > 35 {
+			t.Errorf("resized line %d is %d cells wide; want at most 35", lineNo+1, got)
 		}
 	}
 }

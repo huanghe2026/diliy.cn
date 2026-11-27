@@ -120,15 +120,12 @@ var neonGradient = [][3]int{
 	{147, 51, 234}, // 紫（循环）
 }
 
-// geoyuanLogoNeon GEOYUAN banner 字体字符画（# 为实心点，渲染时替换为全块 █）
+// geoyuanLogoNeon GEOYUAN small 字体字符画（线条字符 _ / \ |，霓虹灯管效果）
 const geoyuanLogoNeon = `
- #####  ####### ####### #     # #     #    #    #     # 
-#     # #       #     #  #   #  #     #   # #   ##    # 
-#       #       #     #   # #   #     #  #   #  # #   # 
-#  #### #####   #     #    #    #     # #     # #  #  # 
-#     # #       #     #    #    #     # ####### #   # # 
-#     # #       #     #    #    #     # #     # #    ## 
- #####  ####### #######    #     #####  #     # #     # 
+  ___ ___ _____   ___   _  _   _  _
+ / __| __/ _ \ \ / / | | |/_\ | \| |
+| (_ | _| (_) \ V /| |_| / _ \| .' |
+ \___|___\___/ |_|  \___/_/ \_\_|\_|
 `
 
 // renderNeonGlowLogo 渲染赛博霓虹 glow logo：全块 █ 无横纹 + 紫粉蓝渐变 + 深紫光晕底。
@@ -158,9 +155,9 @@ func renderNeonGlowLogo(width int) string {
 				b.WriteRune(' ')
 				continue
 			}
-			ci := (x / 8) % len(neonGradient)
+			ci := x * (len(neonGradient) - 1) / (maxW - 1)
 			c := neonGradient[ci]
-			fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm█", c[0], c[1], c[2])
+			fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm%c", c[0], c[1], c[2], r)
 		}
 		b.WriteString(strings.Repeat(" ", width-leftPad-maxW))
 		b.WriteString(bgOff)
