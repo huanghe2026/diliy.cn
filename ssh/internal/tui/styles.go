@@ -157,7 +157,8 @@ func renderNeonGlowLogo(width int) string {
 			}
 			ci := x * (len(neonGradient) - 1) / (maxW - 1)
 			c := neonGradient[ci]
-			fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm%c", c[0], c[1], c[2], r)
+			fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm%c",
+				c[0], c[1], c[2], c[0]/4, c[1]/4, c[2]/4, r)
 		}
 		b.WriteString(strings.Repeat(" ", width-leftPad-maxW))
 		b.WriteString(bgOff)
