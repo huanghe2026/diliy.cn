@@ -4,12 +4,13 @@ import Sponsor from '../components/Sponsor.astro';
 import Qualify from '../components/Qualify.astro';
 import SshHero from '../components/SshHero.astro';
 import { t, type Lang } from '../i18n/ui';
+import { roles } from '../data/team';
 
 const lang: Lang = 'en';
-const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Radare2', 'Wireshark', 'Burp Suite', 'Linux', 'Docker', 'Git', 'tmux', 'neovim'];
+const stack = ['Go', 'Bubble Tea', 'lipgloss', 'Polygon', 'Solidity', 'SQLite', 'H3', 'DeepSeek', 'SSH', 'Docker', 'Linux', 'Git', 'tmux', 'neovim'];
 ---
 
-<Base lang={lang} title="diliy.cn/ — Geoyuan Team" description="Geoyuan — a borderless, AI-native dev crew building toward a network state. Take the AI-age qualification challenge to prove you belong and apply.">
+<Base lang={lang} title="diliy.cn/ — Geoyuan Cards" description="Geoyuan — mint a geography-bound NFT card on Polygon. Pass the AI quiz, claim your coordinates, and join the private cardholder network.">
   <section class="hero">
     <div class="container">
       <div class="hero-content">
@@ -44,7 +45,7 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
           <div class="stat-card"><div class="stat-value">47</div><div class="stat-label">{t(lang, 'stat_ctf_label')}</div></div>
           <div class="stat-card"><div class="stat-value">12</div><div class="stat-label">{t(lang, 'stat_members_label')}</div></div>
           <div class="stat-card"><div class="stat-value">∞</div><div class="stat-label">{t(lang, 'stat_coffee_label')}</div></div>
-          <div class="stat-card"><div class="stat-value">3</div><div class="stat-label">{t(lang, 'stat_0day_label')}</div></div>
+          <div class="stat-card"><div class="stat-value">30</div><div class="stat-label">{t(lang, 'stat_0day_label')}</div></div>
         </div>
       </div>
     </div>
@@ -55,30 +56,14 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
       <div class="section-label">{t(lang, 'team_label')}</div>
       <h2>{t(lang, 'team_title')}</h2>
       <div class="team-grid">
-        <div class="member-card">
-          <div class="member-avatar">NX</div>
-          <div class="member-name">nyx</div>
-          <div class="member-role">lead / reverse eng</div>
-          <p class="member-bio">Lives in IDA and Ghidra. Speaks x86 better than English.</p>
-        </div>
-        <div class="member-card">
-          <div class="member-avatar">ØR</div>
-          <div class="member-name">orphan</div>
-          <div class="member-role">web / pwn</div>
-          <p class="member-bio">XSS is a lifestyle. Still mad about log4j.</p>
-        </div>
-        <div class="member-card">
-          <div class="member-avatar">GH</div>
-          <div class="member-name">ghost</div>
-          <div class="member-role">infra / ops</div>
-          <p class="member-bio">Keeps the servers up and the noise down. Prefer anonymity.</p>
-        </div>
-        <div class="member-card">
-          <div class="member-avatar">VK</div>
-          <div class="member-name">v0idk1tten</div>
-          <div class="member-role">malware analysis</div>
-          <p class="member-bio">Dissects ransomware for breakfast. Cat memes for lunch.</p>
-        </div>
+        {roles.map((r) => (
+          <div class="member-card">
+            <div class="member-avatar">{r.avatar}</div>
+            <div class="member-name">{r.name.en}</div>
+            <div class="member-role">{r.role.en}</div>
+            <p class="member-bio">{r.bio.en}</p>
+          </div>
+        ))}
       </div>
     </div>
   </section>

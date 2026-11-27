@@ -49,7 +49,7 @@ const sshCmd = 'ssh diliy.cn';
             <span class="pill-dot"></span> AI GENERATOR ONLINE
           </span>
           <span class="footer-pill pill-purple">
-            <span class="pill-dot"></span> ED25519 ENCRYPTED
+            <span class="pill-dot"></span> POLYGON AMOY
           </span>
         </div>
       </div>
@@ -114,15 +114,15 @@ const sshCmd = 'ssh diliy.cn';
     { t: 2500, type: 'text',  cls: 'dim',    html: 'Connecting to diliy.cn:22...' },
     { t: 3200, type: 'text',  cls: 'dim',    html: 'Warning: Host key verified (ED25519)' },
     { t: 3800, type: 'logo' },
-    { t: 5200, type: 'text',  cls: 'neon-text', html: '🛰️  Welcome, Buddy. New handle?' },
-    { t: 6200, type: 'cmd',   cmd: 'ghost', prompt: 'geoyuan@diliy', sep: '❯' },
-    { t: 7200, type: 'text',  cls: 'neon-text', html: '⚡ AI generating 30 questions...' },
+    { t: 5200, type: 'text',  cls: 'neon-text', html: '📝  Create your GEOYUAN ID' },
+    { t: 6200, type: 'cmd',   cmd: 'samhuang', prompt: 'geoyuan@diliy', sep: '❯' },
+    { t: 7200, type: 'text',  cls: 'neon-text', html: '⚡ Loading 30-question bank...' },
     { t: 7200, type: 'loader' },
-    { t: 9800, type: 'text',  cls: 'dim',    html: 'Q1/30  Which attention variant scales best?' },
-    { t: 10500, type: 'text',  cls: 'dim',    html: '  A. Multi-Head    ➤  B. Grouped Query    C. Flash    D. Sparse' },
+    { t: 9800, type: 'text',  cls: 'dim',    html: 'Q1/30  Which H3 cell is your card bound to?' },
+    { t: 10500, type: 'text',  cls: 'dim',    html: '  A. Hangzhou    ➤  B. Shanghai    C. Beijing    D. Shenzhen' },
     { t: 13000, type: 'pass' },
-    { t: 13500, type: 'text',  cls: 'neon-text', html: '✓ Approved. Joining private chat...' },
-    { t: 14500, type: 'text',  cls: 'dim',    html: '[#geoyuan] 👥 Online: nyx, orphan, ghost, +3 more' },
+    { t: 13500, type: 'text',  cls: 'neon-text', html: '🎴 Minting your Geo-Card on Polygon...' },
+    { t: 14500, type: 'text',  cls: 'dim',    html: '[#geoyuan] 👥 Online: programmer, artist, ai, +3 more' },
   ];
 
   let timers = [];
@@ -206,7 +206,7 @@ const sshCmd = 'ssh diliy.cn';
         break;
       case 'pass':
         terminalBody.insertAdjacentHTML('beforeend',
-          `<div class="terminal-line pass-line"><span class="pass-text">🎉  PASS — 27/30 (90%)</span></div>`); break;
+          `<div class="terminal-line pass-line"><span class="pass-text">🎉  PASS — 24/30 (80%)</span></div>`); break;
     }
     // ⭐️ 自动滚到底，确保新行可见
     terminalBody.scrollTop = terminalBody.scrollHeight;

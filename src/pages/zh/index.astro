@@ -4,12 +4,13 @@ import Sponsor from '../../components/Sponsor.astro';
 import Qualify from '../../components/Qualify.astro';
 import SshHero from '../../components/SshHero.astro';
 import { t, type Lang } from '../../i18n/ui';
+import { roles } from '../../data/team';
 
 const lang: Lang = 'zh';
-const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Radare2', 'Wireshark', 'Burp Suite', 'Linux', 'Docker', 'Git', 'tmux', 'neovim'];
+const stack = ['Go', 'Bubble Tea', 'lipgloss', 'Polygon', 'Solidity', 'SQLite', 'H3', 'DeepSeek', 'SSH', 'Docker', 'Linux', 'Git', 'tmux', 'neovim'];
 ---
 
-<Base lang={lang} title="diliy.cn/ — Geoyuan 团队" description="Geoyuan——一支无国界、AI 原生的开发团队，正向网络国家进发。完成智能时代的资格挑战，证明你属于这里并申请加入。">
+<Base lang={lang} title="diliy.cn/ — Geoyuan 卡片" description="Geoyuan——在 Polygon 上铸造地理绑定的 NFT 卡片。通过 AI 测试，认领你的坐标，加入持卡人私密网络。">
   <section class="hero">
     <div class="container">
       <div class="hero-content">
@@ -44,7 +45,7 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
           <div class="stat-card"><div class="stat-value">47</div><div class="stat-label">{t(lang, 'stat_ctf_label')}</div></div>
           <div class="stat-card"><div class="stat-value">12</div><div class="stat-label">{t(lang, 'stat_members_label')}</div></div>
           <div class="stat-card"><div class="stat-value">∞</div><div class="stat-label">{t(lang, 'stat_coffee_label')}</div></div>
-          <div class="stat-card"><div class="stat-value">3</div><div class="stat-label">{t(lang, 'stat_0day_label')}</div></div>
+          <div class="stat-card"><div class="stat-value">30</div><div class="stat-label">{t(lang, 'stat_0day_label')}</div></div>
         </div>
       </div>
     </div>
@@ -55,30 +56,14 @@ const stack = ['Python', 'C / C++', 'Rust', 'Assembly', 'Ghidra', 'IDA Pro', 'Ra
       <div class="section-label">{t(lang, 'team_label')}</div>
       <h2>{t(lang, 'team_title')}</h2>
       <div class="team-grid">
-        <div class="member-card">
-          <div class="member-avatar">NX</div>
-          <div class="member-name">nyx</div>
-          <div class="member-role">负责人 / 逆向</div>
-          <p class="member-bio">住在 IDA 与 Ghidra 里。说 x86 比说英语还溜。</p>
-        </div>
-        <div class="member-card">
-          <div class="member-avatar">ØR</div>
-          <div class="member-name">orphan</div>
-          <div class="member-role">web / pwn</div>
-          <p class="member-bio">XSS 是一种生活方式。至今仍对 log4j 耿耿于怀。</p>
-        </div>
-        <div class="member-card">
-          <div class="member-avatar">GH</div>
-          <div class="member-name">ghost</div>
-          <div class="member-role">基础设施 / 运维</div>
-          <p class="member-bio">让服务器不宕、噪声不响。偏好匿名。</p>
-        </div>
-        <div class="member-card">
-          <div class="member-avatar">VK</div>
-          <div class="member-name">v0idk1tten</div>
-          <div class="member-role">恶意软件分析</div>
-          <p class="member-bio">早餐拆解勒索软件。午餐配猫猫表情包。</p>
-        </div>
+        {roles.map((r) => (
+          <div class="member-card">
+            <div class="member-avatar">{r.avatar}</div>
+            <div class="member-name">{r.name.zh}</div>
+            <div class="member-role">{r.role.zh}</div>
+            <p class="member-bio">{r.bio.zh}</p>
+          </div>
+        ))}
       </div>
     </div>
   </section>
