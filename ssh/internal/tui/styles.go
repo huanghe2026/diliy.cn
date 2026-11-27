@@ -71,20 +71,22 @@ func stripLogoTrailingSpace(logo string) string {
 
 const logoWidthMargin = 2
 
-var cyberBlueGradient = [][3]int{
-	{30, 64, 175},
+var cyberpunkGradient = [][3]int{
 	{37, 99, 235},
-	{59, 130, 246},
-	{6, 182, 212},
+	{67, 56, 202},
+	{124, 58, 237},
+	{168, 85, 247},
+	{236, 72, 153},
+	{8, 145, 178},
 	{34, 211, 238},
-	{79, 70, 229},
-	{99, 102, 241},
+	{56, 189, 248},
 }
 
 func renderBrailleGradient(art string) string {
 	width := maxLogoWidth(art)
+	lines := strings.Split(strings.TrimRight(art, "\n"), "\n")
 	var b strings.Builder
-	for _, line := range strings.Split(strings.TrimRight(art, "\n"), "\n") {
+	for y, line := range lines {
 		b.WriteString("\x1b[1m")
 		for x, r := range []rune(line) {
 			if r == '\u2800' {
@@ -93,9 +95,10 @@ func renderBrailleGradient(art string) string {
 			}
 			colorIndex := 0
 			if width > 1 {
-				colorIndex = x * (len(cyberBlueGradient) - 1) / (width - 1)
+				colorIndex = x * (len(cyberpunkGradient) - 1) / (width - 1)
+				colorIndex = (colorIndex + y) % len(cyberpunkGradient)
 			}
-			color := cyberBlueGradient[colorIndex]
+			color := cyberpunkGradient[colorIndex]
 			fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm%c", color[0], color[1], color[2], r)
 		}
 		b.WriteString("\x1b[0m\n")

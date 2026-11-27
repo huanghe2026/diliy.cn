@@ -134,14 +134,26 @@ func TestBrailleLogoHasNoBlankScanlines(t *testing.T) {
 	}
 }
 
-func TestBrailleLogoUsesCyberBlueGradient(t *testing.T) {
+func TestBrailleLogoUsesCyberpunkGradient(t *testing.T) {
 	out := RenderLogo(100)
-	for _, want := range []string{"\x1b[1m", "38;2;30;64;175", "38;2;34;211;238", "38;2;99;102;241"} {
+	for _, want := range []string{
+		"\x1b[1m",
+		"38;2;37;99;235",
+		"38;2;124;58;237",
+		"38;2;236;72;153",
+		"38;2;34;211;238",
+		"38;2;56;189;248",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Braille logo missing %q", want)
 		}
 	}
-	for _, oldColor := range []string{"38;2;34;197;94", "38;2;249;115;22", "38;2;234;179;8"} {
+	for _, oldColor := range []string{
+		"38;2;30;64;175",
+		"38;2;34;197;94",
+		"38;2;249;115;22",
+		"38;2;234;179;8",
+	} {
 		if strings.Contains(out, oldColor) {
 			t.Errorf("Braille logo still uses old color %q", oldColor)
 		}
