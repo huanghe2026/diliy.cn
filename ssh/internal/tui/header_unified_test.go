@@ -114,6 +114,43 @@ func TestLogoAssetsHaveExpectedCellWidths(t *testing.T) {
 	}
 }
 
+func TestBrailleLogoHasNoBlankScanlines(t *testing.T) {
+	leftBits := [...]int{0, 1, 2, 6}
+	rightBits := [...]int{3, 4, 5, 7}
+	for lineNo, line := range strings.Split(strings.TrimRight(ansi.Strip(geoyuanLogoBraille), "\n"), "\n") {
+		for dotRow := 0; dotRow < 4; dotRow++ {
+			hasDot := false
+			for _, r := range line {
+				code := r - '\u2800'
+				if code&(1<<leftBits[dotRow]) != 0 || code&(1<<rightBits[dotRow]) != 0 {
+					hasDot = true
+					break
+				}
+			}
+			if !hasDot {
+				t.Errorf("Braille line %d dot row %d is blank", lineNo+1, dotRow+1)
+			}
+		}
+	}
+}
+
+func TestBrailleLogoUsesCyberBlueGradient(t *testing.T) {
+	out := RenderLogo(100)
+	for _, want := range []string{"\x1b[1m", "38;2;30;64;175", "38;2;34;211;238", "38;2;99;102;241"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Braille logo missing %q", want)
+		}
+	}
+	for _, oldColor := range []string{"38;2;34;197;94", "38;2;249;115;22", "38;2;234;179;8"} {
+		if strings.Contains(out, oldColor) {
+			t.Errorf("Braille logo still uses old color %q", oldColor)
+		}
+	}
+	if strings.Contains(out, "█") {
+		t.Error("Braille logo contains full-block artwork")
+	}
+}
+
 func TestDisplayWidthUsesTerminalCells(t *testing.T) {
 	if got := displayWidth("\x1b[31m界🙂\x1b[0m"); got != 4 {
 		t.Errorf("displayWidth() = %d; want 4", got)

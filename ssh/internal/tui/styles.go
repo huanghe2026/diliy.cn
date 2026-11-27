@@ -71,17 +71,49 @@ func stripLogoTrailingSpace(logo string) string {
 
 const logoWidthMargin = 2
 
+var cyberBlueGradient = [][3]int{
+	{30, 64, 175},
+	{37, 99, 235},
+	{59, 130, 246},
+	{6, 182, 212},
+	{34, 211, 238},
+	{79, 70, 229},
+	{99, 102, 241},
+}
+
+func renderBrailleGradient(art string) string {
+	width := maxLogoWidth(art)
+	var b strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(art, "\n"), "\n") {
+		b.WriteString("\x1b[1m")
+		for x, r := range []rune(line) {
+			if r == '\u2800' {
+				b.WriteRune(r)
+				continue
+			}
+			colorIndex := 0
+			if width > 1 {
+				colorIndex = x * (len(cyberBlueGradient) - 1) / (width - 1)
+			}
+			color := cyberBlueGradient[colorIndex]
+			fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm%c", color[0], color[1], color[2], r)
+		}
+		b.WriteString("\x1b[0m\n")
+	}
+	return b.String()
+}
+
 // RenderLogo picks the richest complete asset that fits the terminal width.
 func RenderLogo(width int) string {
 	if width <= 0 {
 		return ""
 	}
 
-	for _, art := range []string{geoyuanLogoBraille, geoyuanLogoFallback} {
-		if maxLogoWidth(art)+logoWidthMargin > width {
-			continue
-		}
-		return centerLogo(art, width)
+	if maxLogoWidth(geoyuanLogoBraille)+logoWidthMargin <= width {
+		return centerLogo(renderBrailleGradient(geoyuanLogoBraille), width)
+	}
+	if maxLogoWidth(geoyuanLogoFallback)+logoWidthMargin <= width {
+		return centerLogo(geoyuanLogoFallback, width)
 	}
 	return renderCompactLogo(width)
 }
