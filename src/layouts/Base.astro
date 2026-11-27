@@ -16,7 +16,7 @@ const SITE = 'https://diliy.cn';
 const canonical = SITE + (pathname === '' ? '/' : pathname);
 const desc =
   description ??
-  'Geoyuan — a borderless, AI-native dev crew building toward a network state. Take the AI-age qualification challenge to apply.';
+  'Geoyuan — mint a geography-bound NFT card on Polygon. Pass the AI quiz, claim your coordinates, and join the private cardholder network.';
 
 // hreflang alternates (bilingual: en <-> zh)
 const enPath = pathname.startsWith('/zh') ? pathname.slice(3) || '/' : pathname;
@@ -30,11 +30,11 @@ const orgLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'Geoyuan',
-  alternateName: 'Geoyuan Team',
+  alternateName: 'Geoyuan Cards',
   url: SITE,
   description:
-    'A distributed, borderless team of builders — programmers, artists, AI experts, data analysts and psychology experts — building toward a network state.',
-  slogan: 'We build Geoyuan to a network state.',
+    'Geoyuan mints geography-bound NFT cards on Polygon. Every card is tied to a real H3 cell on Earth, earned by passing an AI qualification quiz.',
+  slogan: 'Card your life — geo-bound, on-chain.',
   email: 'hangzhou62@gmail.com',
   identical: ['https://diliy.cn'],
 };
