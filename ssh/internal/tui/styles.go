@@ -227,7 +227,7 @@ func renderMasthead(width int) string {
 	if lipgloss.Width(box) > width {
 		return renderNeonGlowLogo(width) + renderSlogan(width)
 	}
-	return box
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, box)
 }
 
 // buildMetaLine 构建 masthead 元信息行：网址 · 版权 · 版本 · 日期

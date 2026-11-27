@@ -841,6 +841,7 @@ func (m Model) headerBar() string {
 	}
 
 	var b strings.Builder
+	b.WriteString("\n") // 顶部留一个空行，避免 masthead 顶格贴边
 	if m.termHeight > 0 && m.termHeight < 20 {
 		b.WriteString(renderCompactLogo(safeW))
 	} else {
