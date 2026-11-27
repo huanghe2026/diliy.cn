@@ -836,8 +836,7 @@ func (m Model) headerBar() string {
 	if m.termHeight > 0 && m.termHeight < 20 {
 		b.WriteString(renderCompactLogo(safeW))
 	} else {
-		b.WriteString(renderNeonGlowLogo(safeW))
-		b.WriteString(renderSlogan(safeW))
+		b.WriteString(renderMasthead(safeW))
 	}
 	b.WriteString("\x1b[0m")
 

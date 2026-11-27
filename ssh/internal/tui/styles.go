@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -183,6 +184,57 @@ func renderSlogan(width int) string {
 	leftPad := 2
 	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
 	return strings.Repeat(" ", leftPad) + style.Render(text) + "\x1b[0m\n"
+}
+
+// appVersion 当前版本号（masthead 元信息展示）
+const appVersion = "1.0.0"
+
+// renderMasthead 杂志标题风格 masthead：方框包裹 logo + slogan + 元信息行
+func renderMasthead(width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	// logo 霓虹渲染（无 padding，方框统一处理）
+	logoLines := strings.Split(strings.TrimRight(geoyuanLogoNeon, "\n"), "\n")
+	var logo strings.Builder
+	for _, line := range logoLines {
+		for x, r := range []rune(line) {
+			if r == ' ' {
+				logo.WriteRune(' ')
+				continue
+			}
+			ci := (x / 6) % len(neonGradient)
+			c := neonGradient[ci]
+			fmt.Fprintf(&logo, "\x1b[1;38;2;%d;%d;%dm█", c[0], c[1], c[2])
+		}
+		logo.WriteString("\x1b[0m\n")
+	}
+
+	slogan := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc")).
+		Render("◆ Card your life ◆")
+	meta := lipgloss.NewStyle().Foreground(lipgloss.Color("#8b8fa3")).
+		Render(buildMetaLine())
+
+	content := strings.TrimRight(logo.String(), "\n") + "\n" + slogan + "\n" + meta
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#a855f7")).
+		Padding(0, 2).
+		Render(content)
+
+	if ansi.StringWidth(box) > width {
+		return renderNeonGlowLogo(width) + renderSlogan(width)
+	}
+	return box
+}
+
+// buildMetaLine 构建 masthead 元信息行：网址 · 版权 · 版本 · 日期
+func buildMetaLine() string {
+	now := time.Now()
+	return fmt.Sprintf("geoyuan.com · © %d · v%s · %s",
+		now.Year(), appVersion, now.Format("2006-01-02"))
 }
 
 // renderHeroSlogan 放大版 slogan（欢迎页/主页）：霓虹渐变 tagline + 中文定位
