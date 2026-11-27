@@ -120,12 +120,13 @@ var neonGradient = [][3]int{
 	{147, 51, 234}, // 紫（循环）
 }
 
-// geoyuanLogoNeon GEOYUAN small 字体字符画（线条字符 _ / \ |，霓虹灯管效果）
+// geoyuanLogoNeon GEOYUAN 像素点阵字（全块 █，5 行 × 41 列，字母清晰可辨）
 const geoyuanLogoNeon = `
-  ___ ___ _____   ___   _  _   _  _
- / __| __/ _ \ \ / / | | |/_\ | \| |
-| (_ | _| (_) \ V /| |_| / _ \| .' |
- \___|___\___/ |_|  \___/_/ \_\_|\_|
+█████ █████ █████ █   █ █   █ █████ █   █
+█     █     █   █ █   █ █   █ █   █ ██  █
+█ ███ █████ █   █ █████ █   █ █████ █ █ █
+█   █ █     █   █   █   █   █ █   █ █  ██
+█████ █████ █████   █   █████ █   █ █   █
 `
 
 // renderNeonGlowLogo 渲染赛博霓虹 glow logo：全块 █ 无横纹 + 紫粉蓝渐变 + 深紫光晕底。
@@ -142,7 +143,7 @@ func renderNeonGlowLogo(width int) string {
 		return renderCompactLogo(width)
 	}
 
-	leftPad := (width - maxW) / 2
+	leftPad := 2
 	bgOn := "\x1b[48;2;16;8;44m" // 深紫光晕底
 	bgOff := "\x1b[49m"
 
@@ -155,7 +156,7 @@ func renderNeonGlowLogo(width int) string {
 				b.WriteRune(' ')
 				continue
 			}
-			ci := x * (len(neonGradient) - 1) / (maxW - 1)
+			ci := (x / 6) % len(neonGradient)
 			c := neonGradient[ci]
 			fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm%c",
 				c[0], c[1], c[2], c[0]/4, c[1]/4, c[2]/4, r)
@@ -173,13 +174,13 @@ func renderSlogan(width int) string {
 		return ""
 	}
 	text := "◆ Card your life ◆"
-	if displayWidth(text) > width {
+	if displayWidth(text)+2 > width {
 		text = "Card your life"
-		if displayWidth(text) > width {
+		if displayWidth(text)+2 > width {
 			return ""
 		}
 	}
-	leftPad := (width - displayWidth(text)) / 2
+	leftPad := 2
 	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
 	return strings.Repeat(" ", leftPad) + style.Render(text) + "\x1b[0m\n"
 }
