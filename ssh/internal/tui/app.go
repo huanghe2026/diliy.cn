@@ -985,8 +985,8 @@ func (m Model) viewRegister() string {
 	// 🧠 Switch User 警告 — 同 fp 重新注册会替换旧账号
 	if m.fp != "" {
 		if oldUser, _ := m.store.GetUserByFingerprint(m.fp); oldUser != nil {
-			content.WriteString(red.Render("  ⚠  切换用户模式：你的 SSH key 已绑定账号 '"+oldUser.Username+"'") + "\n")
-			content.WriteString(dim.Render("     继续注册新用户名会替换旧账号（答题记录将重置）") + "\n\n")
+			content.WriteString(red.Render("  ⚠  你的 SSH 密钥已绑定账号 '" + oldUser.Username + "'") + "\n")
+			content.WriteString(dim.Render("     注册新用户名会替换该账号（答题记录重置）。按 Esc 返回保留原账号") + "\n\n")
 		}
 	}
 
@@ -1036,33 +1036,24 @@ func (m Model) viewRegister() string {
 	))
 	content.WriteString("\n")
 
-	// ═══ 字段 3: Language ═══
+	// ═══ 字段 3: Language ═══（无 flag emoji，终端兼容性更好）
+	zhSel := "[ 中文 ]"
+	enSel := "[ English ]"
 	langRow := "  语言    "
-	// zh
-	zhFlag := "🇨🇳 中文"
-	enFlag := "🇺🇸 English"
-	zhStyle := dim.Render(zhFlag)
-	enStyle := dim.Render(enFlag)
 	if m.registerStep == 3 {
 		if m.langCursor == 0 {
-			zhStyle = cyan.Render("▶ " + zhFlag)
-			enStyle = dim.Render("  " + enFlag)
+			langRow += cyan.Render("▶ " + zhSel) + "   " + dim.Render("  " + enSel)
 		} else {
-			zhStyle = dim.Render("  " + zhFlag)
-			enStyle = cyan.Render("▶ " + enFlag)
+			langRow += dim.Render("  " + zhSel) + "   " + cyan.Render("▶ " + enSel)
 		}
+		langRow += "   " + dim.Render("← → 选择")
 	} else {
 		if m.langCursor == 0 {
-			zhStyle = green.Render(zhFlag)
+			langRow += green.Render(zhSel) + "   " + dim.Render(enSel)
 		} else {
-			enStyle = green.Render(enFlag)
+			langRow += dim.Render(zhSel) + "   " + green.Render(enSel)
 		}
-	}
-	langRow += zhStyle + "   " + enStyle
-	if m.registerStep != 3 {
 		langRow += "   " + green.Render("✅ 已选")
-	} else {
-		langRow += "   " + dim.Render("(← → 或 1/2)")
 	}
 	content.WriteString(langRow)
 	content.WriteString("\n\n")
@@ -1072,8 +1063,24 @@ func (m Model) viewRegister() string {
 		content.WriteString("  " + red.Render("✗  "+m.inputErr) + "\n\n")
 	}
 
+	// 🎯 当前操作提示（醒目，告诉用户下一步做什么）
+	var action string
+	switch m.registerStep {
+	case 0:
+		action = "输入用户名 → 按 Enter 进入下一步"
+	case 1:
+		action = "输入显示名（可留空）→ 按 Enter 进入下一步"
+	case 2:
+		action = "输入简介（可留空）→ 按 Enter 进入下一步"
+	case 3:
+		action = "← → 选择语言 → 按 Enter 完成注册"
+	}
+	content.WriteString(green.Render("  ▶ " + action) + "\n\n")
+
 	// ═══ 底部快捷键 hint ═══
-	content.WriteString(dim.Render("  💡  Tab/↓ 下一项 · Shift+Tab/↑ 上一项 · Enter 提交 · :skip 跳过 · :redeem <token> 兑换"))
+	content.WriteString(dim.Render("  💡  Tab/↓ 下一项 · Shift+Tab/↑ 上一项 · Enter 提交/下一步"))
+	content.WriteString("\n")
+	content.WriteString(dim.Render("  🔧 高级：:skip 跳过可选字段 · :redeem <token> 兑换通行证"))
 
 	// ═══ 组装卡片 ═══
 	card := lipgloss.NewStyle().
@@ -1095,7 +1102,6 @@ func (m Model) viewRegister() string {
 
 // renderFieldRow 渲染一行字段（含 label + 当前值 / textinput.View + ✅ / ⚠）
 func (m Model) renderFieldRow(label, value string, step int, required bool, validator func(string) bool) string {
-	cyan := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
 	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
 	red := lipgloss.NewStyle().Foreground(cNeonRed).Bold(true)
@@ -1124,10 +1130,13 @@ func (m Model) renderFieldRow(label, value string, step int, required bool, vali
 		valid = len([]rune(value)) <= 80
 	}
 
-	// 当前字段：显示 textinput.View()
+	// 当前字段：显示 textinput.View()，用青底黑字突出"正在输入"的状态
 	if isCurrent {
-		// 用 cyan 背景 + underline 样式渲染当前输入
-		inputStyled := cyan.Render(m.currentRegisterInput().View())
+		inputStyled := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#0b0b1a")).
+			Background(cNeonCyan).
+			Bold(true).
+			Render(m.currentRegisterInput().View())
 		b.WriteString(inputStyled)
 		if validator != nil {
 			// 自定义校验
