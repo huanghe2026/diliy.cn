@@ -106,6 +106,110 @@ func renderBrailleGradient(art string) string {
 	return b.String()
 }
 
+// ── 赛博霓虹 glow logo（全块 █ + 紫粉蓝渐变 + 深紫光晕底）──
+
+// neonGradient 赛博霓虹色系（紫→粉→蓝→青循环）
+var neonGradient = [][3]int{
+	{147, 51, 234}, // 紫
+	{168, 85, 247}, // 亮紫
+	{217, 70, 239}, // 洋红
+	{236, 72, 153}, // 粉
+	{99, 102, 241}, // 靛蓝
+	{59, 130, 246}, // 蓝
+	{34, 211, 238}, // 青
+	{147, 51, 234}, // 紫（循环）
+}
+
+// geoyuanLogoNeon GEOYUAN 全块 █ 字符画（纯字符，无颜色）
+const geoyuanLogoNeon = `
+     ██████████████ ██████ ███  ███████  ███  ████  ████  ███
+   ████████ ███████████████████ ███ ███  ███ ██████ █████ ███
+   ███ ███████████ ███   █████████  ███  ███ ██████ █████████
+   ███ ███████████ ███   ███ ████   ███  ████████████████████
+   █████████████████████████  ███   ███████████████████ █████
+     ██████████████ ██████    ███    █████████   ██████  ████
+`
+
+// renderNeonGlowLogo 渲染赛博霓虹 glow logo：全块 █ 无横纹 + 紫粉蓝渐变 + 深紫光晕底。
+func renderNeonGlowLogo(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(geoyuanLogoNeon, "\n"), "\n")
+	maxW := maxLogoWidth(geoyuanLogoNeon)
+	if maxW+2 > width {
+		if maxLogoWidth(geoyuanLogoFallback)+logoWidthMargin <= width {
+			return centerLogo(geoyuanLogoFallback, width)
+		}
+		return renderCompactLogo(width)
+	}
+
+	leftPad := (width - maxW) / 2
+	bgOn := "\x1b[48;2;16;8;44m" // 深紫光晕底
+	bgOff := "\x1b[49m"
+
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString(bgOn)
+		b.WriteString(strings.Repeat(" ", leftPad))
+		for x, r := range []rune(line) {
+			if r == ' ' {
+				b.WriteRune(' ')
+				continue
+			}
+			ci := x * (len(neonGradient) - 1) / (maxW - 1)
+			c := neonGradient[ci]
+			fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm█", c[0], c[1], c[2])
+		}
+		b.WriteString(strings.Repeat(" ", width-leftPad-maxW))
+		b.WriteString(bgOff)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// renderSlogan 渲染品牌 slogan「Card your life」居中霓虹
+func renderSlogan(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	text := "◆ Card your life ◆"
+	if displayWidth(text) > width {
+		text = "Card your life"
+		if displayWidth(text) > width {
+			return ""
+		}
+	}
+	leftPad := (width - displayWidth(text)) / 2
+	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
+	return strings.Repeat(" ", leftPad) + style.Render(text) + "\x1b[0m\n"
+}
+
+// renderHeroSlogan 放大版 slogan（欢迎页/主页）：霓虹渐变 tagline + 中文定位
+func renderHeroSlogan(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	tagline := "Card your life"
+	subtitle := "把地理位置变成可拥有的永久数字资产"
+
+	var b strings.Builder
+	b.WriteString("  ")
+	runes := []rune(tagline)
+	for i, r := range runes {
+		if r == ' ' {
+			b.WriteRune(' ')
+			continue
+		}
+		ci := i * (len(neonGradient) - 1) / (len(runes) - 1)
+		c := neonGradient[ci]
+		fmt.Fprintf(&b, "\x1b[1;38;2;%d;%d;%dm%c", c[0], c[1], c[2], r)
+	}
+	b.WriteString("\x1b[0m\n")
+	b.WriteString("  " + lipgloss.NewStyle().Foreground(cMuted).Render(subtitle) + "\n")
+	return b.String()
+}
+
 // RenderLogo picks the richest complete asset that fits the terminal width.
 func RenderLogo(width int) string {
 	if width <= 0 {
@@ -170,25 +274,27 @@ func renderCompactLogo(width int) string {
 }
 
 // ═══════════════════════════════════════════════
-//  🎨 主题色板（Earth-Tone · Geoyuan 地理主题）
+//
+//	🎨 主题色板（Earth-Tone · Geoyuan 地理主题）
+//
 // ═══════════════════════════════════════════════
 // 地形绿 → 地质橙 → 矿物金 → 森林翠 → 河流青 → 海洋蓝 → 深海蓝
 // 全部用 truecolor hex，fallback 256 色
 var (
 	// Earth primary
-	cNeonPurple = lipgloss.Color("#3b82f6")  // 主品牌蓝（海洋）
-	cNeonPink   = lipgloss.Color("#1d4ed8")  // 深海蓝（原霓虹粉）
-	cNeonCyan   = lipgloss.Color("#06b6d4")  // 河流青
-	cNeonGreen  = lipgloss.Color("#22c55e")  // 地形绿
-	cNeonGold   = lipgloss.Color("#f59e0b")  // 矿物金
-	cNeonRed    = lipgloss.Color("#ef4444")  // 警示红
+	cNeonPurple = lipgloss.Color("#3b82f6") // 主品牌蓝（海洋）
+	cNeonPink   = lipgloss.Color("#1d4ed8") // 深海蓝（原霓虹粉）
+	cNeonCyan   = lipgloss.Color("#06b6d4") // 河流青
+	cNeonGreen  = lipgloss.Color("#22c55e") // 地形绿
+	cNeonGold   = lipgloss.Color("#f59e0b") // 矿物金
+	cNeonRed    = lipgloss.Color("#ef4444") // 警示红
 
 	// Neutrals (dark terminal friendly)
-	cText    = lipgloss.Color("#e2e8f0")  // slate-200
-	cMuted   = lipgloss.Color("#94a3b8")  // slate-400
-	cDim     = lipgloss.Color("#64748b")  // slate-500
-	cBorder  = lipgloss.Color("#475569")  // slate-600
-	cSurface = lipgloss.Color("#1e293b")  // slate-800
+	cText    = lipgloss.Color("#e2e8f0") // slate-200
+	cMuted   = lipgloss.Color("#94a3b8") // slate-400
+	cDim     = lipgloss.Color("#64748b") // slate-500
+	cBorder  = lipgloss.Color("#475569") // slate-600
+	cSurface = lipgloss.Color("#1e293b") // slate-800
 )
 
 // ═══════════════════════════════════════════════
@@ -538,22 +644,22 @@ func RenderTryAgainFail(score, total int) string {
 
 var (
 	// 颜色别名 (backward compat — 大地色系)
-	colorBrand      = cNeonPurple  // 主品牌海洋蓝
-	colorBrandDark  = lipgloss.Color("#1e40af")  // 深蓝
-	colorAccent     = cNeonCyan    // 河流青
-	colorGold       = cNeonGold    // 矿物金
-	colorSuccess    = cNeonGreen   // 地形绿
-	colorDanger     = cNeonRed     // 警示红
-	colorWarn       = cNeonGold
-	colorText       = cText
-	colorMuted      = cMuted
-	colorDim        = cDim
-	colorBorder     = cBorder
-	colorBorderSub  = lipgloss.Color("#334155")  // slate-700
+	colorBrand     = cNeonPurple               // 主品牌海洋蓝
+	colorBrandDark = lipgloss.Color("#1e40af") // 深蓝
+	colorAccent    = cNeonCyan                 // 河流青
+	colorGold      = cNeonGold                 // 矿物金
+	colorSuccess   = cNeonGreen                // 地形绿
+	colorDanger    = cNeonRed                  // 警示红
+	colorWarn      = cNeonGold
+	colorText      = cText
+	colorMuted     = cMuted
+	colorDim       = cDim
+	colorBorder    = cBorder
+	colorBorderSub = lipgloss.Color("#334155") // slate-700
 
-	colorSelf   = cNeonCyan   // 河流青（自己的消息）
-	colorOther  = cNeonGreen  // 地形绿（别人的消息）
-	colorDM     = cNeonGold   // 矿物金（私信）
+	colorSelf   = cNeonCyan  // 河流青（自己的消息）
+	colorOther  = cNeonGreen // 地形绿（别人的消息）
+	colorDM     = cNeonGold  // 矿物金（私信）
 	colorSystem = cDim
 
 	// 样式别名 (backward compat) — 大地蓝主题
@@ -561,7 +667,7 @@ var (
 
 	styleHeader = lipgloss.NewStyle().Bold(true).Foreground(cNeonPurple).MarginBottom(1)
 
-	styleHeaderBar = lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)  // 地形绿
+	styleHeaderBar = lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true) // 地形绿
 
 	styleCard = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -576,10 +682,10 @@ var (
 			MarginBottom(1)
 
 	styleCardSuccess = lipgloss.NewStyle().
-			Border(lipgloss.DoubleBorder()).
-			BorderForeground(cNeonGreen).
-			Padding(1, 2).
-			MarginBottom(1)
+				Border(lipgloss.DoubleBorder()).
+				BorderForeground(cNeonGreen).
+				Padding(1, 2).
+				MarginBottom(1)
 
 	styleCardDanger = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -602,8 +708,8 @@ var (
 			MarginTop(1)
 
 	styleSuccessText = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(cNeonGreen)
+				Bold(true).
+				Foreground(cNeonGreen)
 
 	styleDangerText = lipgloss.NewStyle().
 			Bold(true).
@@ -623,10 +729,10 @@ var (
 			Foreground(cText)
 
 	styleOptionSelected = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#000000")).
-			Background(cNeonCyan).
-			Bold(true).
-			Padding(0, 1)
+				Foreground(lipgloss.Color("#000000")).
+				Background(cNeonCyan).
+				Bold(true).
+				Padding(0, 1)
 
 	styleMarkOK  = lipgloss.NewStyle().Bold(true).Foreground(cNeonGreen)
 	styleMarkBad = lipgloss.NewStyle().Bold(true).Foreground(cNeonRed)

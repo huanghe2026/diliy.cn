@@ -836,7 +836,8 @@ func (m Model) headerBar() string {
 	if m.termHeight > 0 && m.termHeight < 20 {
 		b.WriteString(renderCompactLogo(safeW))
 	} else {
-		b.WriteString(RenderLogo(safeW))
+		b.WriteString(renderNeonGlowLogo(safeW))
+		b.WriteString(renderSlogan(safeW))
 	}
 	b.WriteString("\x1b[0m")
 
@@ -1940,6 +1941,9 @@ func (m Model) viewWelcome() string {
 
 	var content strings.Builder
 
+	content.WriteString(renderHeroSlogan(m.termWidth))
+	content.WriteString("\n")
+
 	n, _ := m.store.CountApproved()
 	totalAttempts, _ := m.store.CountAttemptsForUser(m.user.ID)
 
@@ -1990,7 +1994,7 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.retrySel--
 		}
 	case "right", "down", "l", "j":
-		if m.retrySel < 2 {
+		if m.retrySel < 3 {
 			m.retrySel++
 		}
 	case "enter":
@@ -2035,6 +2039,10 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 
 			return m, nil
+		} else if m.retrySel == 2 {
+			// 🔄 切换用户
+			m.switchUser()
+			return m, nil
 		}
 		m.Done = true
 		return m, tea.Quit
@@ -2048,7 +2056,7 @@ func (m Model) viewRetry() string {
 
 	var content strings.Builder
 	content.WriteString(styleCardDanger.Render(fmt.Sprintf(
-		"  ⚠  %s，你尚未通过准入测试\n\n  当前状态: pending（未通过）",
+		"  ⚠  %s，你尚未通过准入测试\n\n  别担心，可随时重试 · 答对 24/30 即可解锁全部功能",
 		m.user.Username,
 	)))
 
@@ -2057,6 +2065,7 @@ func (m Model) viewRetry() string {
 	labels := []string{
 		"    🎯  重新挑战 AI 题目",
 		"    🪙  用 Web token 兑换 (:redeem <token>)",
+		"    🔄  切换用户",
 		"    🚪  退出连接",
 	}
 	for i, l := range labels {
@@ -2280,7 +2289,9 @@ func (m Model) viewMenu() string {
 	b.WriteString(m.headerBar())
 	b.WriteString("\n")
 
-	// 欢迎标语（logo 已由 headerBar 提供）
+	// slogan 放大展示 + 欢迎语（logo 已由 headerBar 提供）
+	b.WriteString(renderHeroSlogan(m.termWidth))
+	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true).
 		Render("  ◆ Welcome back, Buddy — pick your mission") + "\n\n")
 
