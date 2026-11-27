@@ -196,7 +196,7 @@ func renderMasthead(width int) string {
 	}
 
 	// logo 霓虹渲染（无 padding，方框统一处理）
-	logoLines := strings.Split(strings.TrimRight(geoyuanLogoNeon, "\n"), "\n")
+	logoLines := strings.Split(strings.Trim(geoyuanLogoNeon, "\n"), "\n")
 	var logo strings.Builder
 	for _, line := range logoLines {
 		for x, r := range []rune(line) {
