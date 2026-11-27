@@ -59,8 +59,7 @@ func TestRenderLogoSelectsCompleteTier(t *testing.T) {
 		contains string
 		lines    int
 	}{
-		{"braille", 160, "⣿", 6},
-		{"halfblock", 120, "█", 6},
+		{"braille", 100, "⣿", 6},
 		{"fallback", 40, "geoyuan.com", 3},
 		{"compact", 20, "GEOYUAN", 1},
 	}

@@ -44,24 +44,9 @@ func RenderSplash(width int) string {
 	return geoyuanSplash
 }
 
-// LogoTier 三层 fallback 优先级
-type LogoTier int
-
-const (
-	LogoTierBraille   LogoTier = iota // 最高密 Braille
-	LogoTierHalfblock                 // 半块 ▀ ANSI（已优化）
-	LogoTierFallback                  // 纯文本（兜底）
-)
-
-// ── 终端能力检测（运行时决定用哪层） ──
-
 // displayWidth uses the same ANSI/grapheme-aware measurement as Lip Gloss.
 func displayWidth(s string) int {
 	return ansi.StringWidth(s)
-}
-
-func termSupportsBraille(width int) bool {
-	return width >= brailleLogoMinWidth && maxLogoWidth(geoyuanLogoBraille)+logoWidthMargin <= width
 }
 
 func trimLogoLine(line string) string {
@@ -84,10 +69,7 @@ func stripLogoTrailingSpace(logo string) string {
 	return b.String()
 }
 
-const (
-	brailleLogoMinWidth = 150
-	logoWidthMargin      = 2
-)
+const logoWidthMargin = 2
 
 // RenderLogo picks the richest complete asset that fits the terminal width.
 func RenderLogo(width int) string {
@@ -95,19 +77,11 @@ func RenderLogo(width int) string {
 		return ""
 	}
 
-	tiers := []struct {
-		minWidth int
-		art      string
-	}{
-		{brailleLogoMinWidth, geoyuanLogoBraille},
-		{0, geoyuanLogoHalfblock},
-		{0, geoyuanLogoFallback},
-	}
-	for _, tier := range tiers {
-		if width < tier.minWidth || maxLogoWidth(tier.art)+logoWidthMargin > width {
+	for _, art := range []string{geoyuanLogoBraille, geoyuanLogoFallback} {
+		if maxLogoWidth(art)+logoWidthMargin > width {
 			continue
 		}
-		return centerLogo(tier.art, width)
+		return centerLogo(art, width)
 	}
 	return renderCompactLogo(width)
 }
