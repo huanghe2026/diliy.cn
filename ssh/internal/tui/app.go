@@ -837,6 +837,7 @@ func (m Model) headerBar() string {
 		b.WriteString(renderCompactLogo(safeW))
 	} else {
 		b.WriteString(renderMasthead(safeW))
+		b.WriteString("\n")
 	}
 	b.WriteString("\x1b[0m")
 

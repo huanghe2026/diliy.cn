@@ -135,7 +135,7 @@ func renderNeonGlowLogo(width int) string {
 	if width <= 0 {
 		return ""
 	}
-	lines := strings.Split(strings.TrimRight(geoyuanLogoNeon, "\n"), "\n")
+	lines := strings.Split(strings.Trim(geoyuanLogoNeon, "\n"), "\n")
 	maxW := maxLogoWidth(geoyuanLogoNeon)
 	if maxW+2 > width {
 		if maxLogoWidth(geoyuanLogoFallback)+logoWidthMargin <= width {
@@ -224,7 +224,7 @@ func renderMasthead(width int) string {
 		Padding(0, 2).
 		Render(content)
 
-	if ansi.StringWidth(box) > width {
+	if lipgloss.Width(box) > width {
 		return renderNeonGlowLogo(width) + renderSlogan(width)
 	}
 	return box
