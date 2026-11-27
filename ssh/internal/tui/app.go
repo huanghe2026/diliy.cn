@@ -979,7 +979,7 @@ func (m Model) viewRegister() string {
 
 	// ═══ 进度 header ═══
 	var content strings.Builder
-	content.WriteString(gold.Render("  📝  CREATE YOUR GEOYUAN ID") + "\n\n")
+	content.WriteString(gold.Render("  📝  创建你的 GEOYUAN ID") + "\n\n")
 
 	// 🧠 Switch User 警告 — 同 fp 重新注册会替换旧账号
 	if m.fp != "" {
@@ -991,16 +991,16 @@ func (m Model) viewRegister() string {
 
 	// Step hint（当前步骤标题）
 	stepTitles := []string{
-		"Username (required)",
-		"Display Name (optional)",
-		"Tagline / Bio (optional)",
-		"Language",
+		"用户名（必填）",
+		"显示名（可选）",
+		"签名 / 简介（可选）",
+		"语言",
 	}
 	stepDescs := []string{
-		"3-20 chars · letters / numbers / hyphen",
-		"How should we call you?",
-		"One line about you / your project",
-		"Pick your preferred language",
+		"3-20 字 · 字母 / 数字 / 连字符",
+		"我们该怎么称呼你？",
+		"一句话介绍你自己 / 你的项目",
+		"选择你的首选语言",
 	}
 	content.WriteString(cyan.Render(fmt.Sprintf("  ◆ Step %d/4  ·  %s", m.registerStep+1, stepTitles[m.registerStep])) + "\n")
 	content.WriteString(dim.Render("     "+stepDescs[m.registerStep]) + "\n\n")
@@ -1986,7 +1986,7 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.retrySel--
 		}
 	case "right", "down", "l", "j":
-		if m.retrySel < 3 {
+		if m.retrySel < 4 {
 			m.retrySel++
 		}
 	case "enter":
@@ -1996,20 +1996,20 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.retrySel == 1 {
 			// 退回注册页（支持 :redeem token）
 			ti1 := textinput.New()
-			ti1.Placeholder = "3-20 chars · letters / numbers / hyphen"
+			ti1.Placeholder = "3-20 字 · 字母 / 数字 / 连字符"
 			ti1.CharLimit = 120
 			ti1.Prompt = "> "
 			ti1.Focus()
 			m.nameInput = ti1
 
 			ti2 := textinput.New()
-			ti2.Placeholder = "How should we call you?"
+			ti2.Placeholder = "我们该怎么称呼你？"
 			ti2.CharLimit = 30
 			ti2.Prompt = "> "
 			m.displayInput = ti2
 
 			ti3 := textinput.New()
-			ti3.Placeholder = "One line about you / your project"
+			ti3.Placeholder = "一句话介绍你自己 / 你的项目"
 			ti3.CharLimit = 80
 			ti3.Prompt = "> "
 			m.taglineInput = ti3
@@ -2035,6 +2035,10 @@ func (m Model) updateRetry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// 🔄 切换用户
 			m.switchUser()
 			return m, nil
+		} else if m.retrySel == 3 {
+			// 🔓 退出用户（登出当前账号）
+			m.switchUser()
+			return m, nil
 		}
 		m.Done = true
 		return m, tea.Quit
@@ -2058,6 +2062,7 @@ func (m Model) viewRetry() string {
 		"    🎯  重新挑战 AI 题目",
 		"    🪙  用 Web token 兑换 (:redeem <token>)",
 		"    🔄  切换用户",
+		"    🔓  退出用户",
 		"    🚪  退出连接",
 	}
 	for i, l := range labels {
@@ -2507,18 +2512,18 @@ func (m *Model) switchUser() {
 
 	// 重置 textinput 到空状态
 	m.nameInput = textinput.New()
-	m.nameInput.Placeholder = "Username (alnum, 3-20)"
+	m.nameInput.Placeholder = "用户名（字母数字，3-20）"
 	m.nameInput.CharLimit = 20
 	m.nameInput.Prompt = "> "
 	m.nameInput.Focus()
 
 	m.displayInput = textinput.New()
-	m.displayInput.Placeholder = "Display name (optional)"
+	m.displayInput.Placeholder = "显示名（可选）"
 	m.displayInput.CharLimit = 30
 	m.displayInput.Prompt = "> "
 
 	m.taglineInput = textinput.New()
-	m.taglineInput.Placeholder = "One line about you (optional)"
+	m.taglineInput.Placeholder = "一句话介绍你自己（可选）"
 	m.taglineInput.CharLimit = 80
 	m.taglineInput.Prompt = "> "
 
