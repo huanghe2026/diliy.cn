@@ -671,24 +671,24 @@ func (m *Model) enterChat() {
 func (m Model) breadcrumb() string {
 	switch m.phase {
 	case PhaseWelcome:
-		return "  Home  →  Welcome Back"
+		return "  首页  →  欢迎回来"
 	case PhaseMenu:
-		return "  Home"
+		return "  首页"
 	case PhaseMintCard:
-		return "  Home  →  Mint Card"
+		return "  首页  →  铸造卡片"
 	case PhaseMyCards:
 		if m.showNeighbors {
-			return "  Home  →  My Cards  →  Neighbors"
+			return "  首页  →  我的卡片  →  邻居"
 		}
-		return "  Home  →  My Cards"
+		return "  首页  →  我的卡片"
 	case PhaseMarket:
-		return "  Home  →  Marketplace"
+		return "  首页  →  市场"
 	case PhaseListCard:
-		return "  Home  →  My Cards  →  List for Sale"
+		return "  首页  →  我的卡片  →  挂售"
 	case PhaseChat:
-		return "  Home  →  Crew Chat"
+		return "  首页  →  聊天室"
 	}
-	return "  Home"
+	return "  首页"
 }
 
 func shortWalletAddr(addr string) string {
@@ -733,9 +733,9 @@ func (m Model) statusLine() string {
 		showChain  bool
 		keys       string
 	}{
-		{phase, true, true, "↑↓ Nav · Enter Select · ? Help · Esc Back"},
-		{phase, true, true, "? Help · Esc Back"},
-		{phase, false, true, "? Help · Esc"},
+		{phase, true, true, "↑↓ 导航 · Enter 选择 · ? 帮助 · Esc 返回"},
+		{phase, true, true, "? 帮助 · Esc 返回"},
+		{phase, false, true, "? 帮助 · Esc"},
 		{phase, false, false, "? Esc"},
 		{compactPhase, false, true, "? Esc"},
 		{compactPhase, false, false, "Esc"},
@@ -980,7 +980,7 @@ func (m Model) viewRegister() string {
 	// 🧠 Switch User 警告 — 同 fp 重新注册会替换旧账号
 	if m.fp != "" {
 		if oldUser, _ := m.store.GetUserByFingerprint(m.fp); oldUser != nil {
-			content.WriteString(red.Render("  ⚠  Switch User mode: 你的 SSH key 已绑定账号 '"+oldUser.Username+"'") + "\n")
+			content.WriteString(red.Render("  ⚠  切换用户模式：你的 SSH key 已绑定账号 '"+oldUser.Username+"'") + "\n")
 			content.WriteString(dim.Render("     继续注册新用户名会替换旧账号（答题记录将重置）") + "\n\n")
 		}
 	}
@@ -1184,7 +1184,7 @@ func (m Model) connectionLine() string {
 
 // oneLineWelcome 一行欢迎（Geoyuan 彩虹高亮）— 保留给小屏幕 fallback
 func (m Model) oneLineWelcome() string {
-	return "  🛰️  Welcome, Buddy — you've found the gateway to " + RainbowText("Geoyuan")
+	return "  🛰️  欢迎，伙伴 — 你已找到通往 " + RainbowText("Geoyuan") + " 的入口"
 }
 
 // registerInput 注册输入区（已废弃，viewRegister 直接调 RenderRegisterCard）
@@ -1957,7 +1957,7 @@ func (m Model) viewWelcome() string {
 		Render("✓  验证通过！按 Enter 进入主菜单"))
 
 	// 底部 hint
-	content.WriteString(hintBar("⏎ Enter → Main Menu", "q / Esc → Exit"))
+	content.WriteString(hintBar("⏎ Enter → 主菜单", "q / Esc → 退出"))
 
 	b.WriteString(lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -2263,13 +2263,13 @@ var menuItems = []struct {
 	label string
 	desc  string
 }{
-	{"🎴", "Mint a Geoyuan Card", "Create your permanent geodigital asset on Polygon"},
-	{"🃏", "My Cards", "View your minted cards and H3 cells"},
-	{"🛒", "Marketplace", "Browse & trade cards listed by the community"},
-	{"💬", "Crew Chat", "Talk with other Geoyuan builders"},
-	{"🔄", "Switch User", "Clear session · 换账号登录"},
-	{"🚪", "Exit", "Disconnect from SSH"},
-	{"🌐", "Discover", "Browse every card minted on-chain"},
+	{"🎴", "铸造 Geoyuan 卡片", "在 Polygon 上铸造你的永久地理数字资产"},
+	{"🃏", "我的卡片", "查看你已铸造的卡片和 H3 网格"},
+	{"🛒", "市场", "浏览并交易社区挂售的卡片"},
+	{"💬", "聊天室", "与其他 Geoyuan 建设者交流"},
+	{"🔄", "切换用户", "清除会话 · 换账号登录"},
+	{"🚪", "退出", "断开 SSH 连接"},
+	{"🌐", "发现", "浏览链上所有已铸造的卡片"},
 }
 
 func (m Model) viewMenu() string {
@@ -2281,7 +2281,7 @@ func (m Model) viewMenu() string {
 	b.WriteString(renderHeroSlogan(m.termWidth))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true).
-		Render("  ◆ Welcome back, Buddy — pick your mission") + "\n\n")
+		Render("  ◆ 欢迎回来，伙伴 — 选择你的任务") + "\n\n")
 
 	// Panel Card 网格：3 列，动态行数
 	cols := 3
@@ -2680,7 +2680,7 @@ func (m Model) viewMyCards() string {
 			content.WriteString("  Press " + cyan.Render("M") + " to find neighbor matches around your first card\n")
 			content.WriteString(fmt.Sprintf("    Center cell: 0x%x (k=%d)\n", first.H3Index, m.neighborK))
 		}
-		content.WriteString(hintBar("R reload · M find neighbors · L list this card · Esc/← Back · q quit"))
+		content.WriteString(hintBar("R 刷新 · M 查找邻居 · L 挂售此卡 · Esc/← 返回 · q 退出"))
 	} else {
 		// 邻居匹配结果
 		content.WriteString(neon.Render(fmt.Sprintf("  🧭 Neighbor Match — k=%d around 0x%x", m.neighborK, m.neighborH3)) + "\n\n")
@@ -2705,7 +2705,7 @@ func (m Model) viewMyCards() string {
 			}
 			content.WriteString("\n")
 		}
-		content.WriteString(hintBar("Esc/← Back to My Cards · q quit"))
+		content.WriteString(hintBar("Esc/← 返回我的卡片 · q 退出"))
 	}
 
 	b.WriteString(lipgloss.NewStyle().
@@ -2819,16 +2819,16 @@ func (m Model) viewMarket() string {
 	var content strings.Builder
 
 	if m.marketLoading {
-		content.WriteString("  " + m.spinner() + "  Loading Geoyuan Marketplace...\n")
+		content.WriteString("  " + m.spinner() + "  正在加载 Geoyuan 市场...\n")
 	} else if m.marketErr != "" {
 		content.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.marketErr)) + "\n\n")
 		content.WriteString(dim.Render("  R retry · Esc back\n"))
 	} else {
-		content.WriteString(neon.Render(fmt.Sprintf("  🛒 Geoyuan Marketplace   (%d listing(s) total)", m.marketCount)) + "\n\n")
+		content.WriteString(neon.Render(fmt.Sprintf("  🛒 Geoyuan 市场   （共 %d 个挂售）", m.marketCount)) + "\n\n")
 
 		if len(m.marketListings) == 0 {
 			content.WriteString(dim.Render("  📭 No cards listed yet.\n"))
-			content.WriteString("  Be the first — go to My Cards, select a card, press L to list.\n\n")
+			content.WriteString("  还没有人挂售 — 去「我的卡片」选一张卡，按 L 挂售。\n\n")
 		} else {
 			for i, l := range m.marketListings {
 				prefix := "  "
@@ -2963,13 +2963,13 @@ func (m Model) viewListCard() string {
 	} else if m.listCardDone {
 		content.WriteString(green.Render("  ✓ Listing successful!") + "\n\n")
 		content.WriteString(dim.Render("  Your card is now on the marketplace."))
-		content.WriteString(hintBar("Esc or Enter → Back to My Cards"))
+		content.WriteString(hintBar("Esc 或 Enter → 返回我的卡片"))
 	} else {
 		// 选卡列表
 		content.WriteString(neon.Render("  🃏 Pick a card to list") + "\n\n")
 		if len(m.myCardsCache) == 0 {
 			content.WriteString(red.Render("  ✗ No cards to list. Go mint first.\n"))
-			content.WriteString(hintBar("Esc → Back to My Cards"))
+			content.WriteString(hintBar("Esc → 返回我的卡片"))
 		} else {
 			for i, c := range m.myCardsCache {
 				prefix := "  "
@@ -3167,7 +3167,7 @@ func (m Model) viewQuitConfirm() string {
 	boxMid := "│  " + warn.Render("⚠  What do you want to do?") + "                                  │"
 	boxLine := "│                                                              │"
 	yesLine := "│     " + green.Render("y / Enter") + "  → Disconnect SSH                               │"
-	switchLine := "│     " + gold.Render("u") + "        → Switch User (clear session)                     │"
+	switchLine := "│     " + gold.Render("u") + "        → 切换用户（清除会话）                     │"
 	noLine := "│     " + neon.Render("n / Esc") + "  → Stay here (back to " + phaseLabel(m.prevPhase) + strings.Repeat(" ", 14-len(phaseLabel(m.prevPhase))) + ") │"
 	boxBot := "└────────────────────────────────────────────────────────────┘"
 
@@ -3180,7 +3180,7 @@ func (m Model) viewQuitConfirm() string {
 	b.WriteString(noLine + "\n")
 	b.WriteString(boxBot + "\n")
 	b.WriteString("\n")
-	b.WriteString(hintBar("y → Quit", "u → Switch User", "n / Esc → Stay"))
+	b.WriteString(hintBar("y → 退出", "u → 切换用户", "n / Esc → 留在当前页"))
 
 	return b.String()
 }
@@ -3206,21 +3206,21 @@ func (m Model) updateQuitConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func phaseLabel(p Phase) string {
 	switch p {
 	case PhaseMenu:
-		return "Main Menu"
+		return "主菜单"
 	case PhaseWelcome:
-		return "Welcome"
+		return "欢迎"
 	case PhaseMyCards:
-		return "My Cards"
+		return "我的卡片"
 	case PhaseMarket:
-		return "Marketplace"
+		return "市场"
 	case PhaseListCard:
-		return "List for Sale"
+		return "挂售"
 	case PhaseMintCard:
-		return "Mint Card"
+		return "铸造卡片"
 	case PhaseChat:
-		return "Crew Chat"
+		return "聊天室"
 	}
-	return "previous page"
+	return "上一页"
 }
 
 // ═══════════════════════════════════════════════
@@ -3282,79 +3282,79 @@ func (m Model) viewHelpOverlay() string {
 	b.WriteString(strings.Repeat("\n", 1))
 
 	// 顶部标题
-	b.WriteString("  " + neon.Render("◆ GEoYUAN  KEYBOARD REFERENCE"))
-	b.WriteString("  " + dim.Render("(press any key or Esc to close)"))
+	b.WriteString("  " + neon.Render("◆ GEoYUAN  快捷键说明"))
+	b.WriteString("  " + dim.Render("（按任意键或 Esc 关闭）"))
 	b.WriteString("\n\n")
 
 	// 全局（所有页面）
-	b.WriteString("  " + cyan.Render("GLOBAL (any page)") + "\n")
-	b.WriteString("  " + green.Render("?"+strings.Repeat(" ", 14)) + "Toggle this help\n")
-	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Back to previous / Quit confirm\n")
-	b.WriteString("  " + green.Render("Ctrl+C") + strings.Repeat(" ", 10) + "Force quit\n")
+	b.WriteString("  " + cyan.Render("全局（任意页面）") + "\n")
+	b.WriteString("  " + green.Render("?"+strings.Repeat(" ", 14)) + "打开/关闭本帮助\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "返回上一页 / 确认退出\n")
+	b.WriteString("  " + green.Render("Ctrl+C") + strings.Repeat(" ", 10) + "强制退出\n")
 	b.WriteString("\n")
 
 	// 主菜单
-	b.WriteString("  " + cyan.Render("MAIN MENU") + "\n")
-	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Navigate options\n")
-	b.WriteString("  " + green.Render("1 - 7") + strings.Repeat(" ", 13) + "Jump directly to item\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Select current\n")
+	b.WriteString("  " + cyan.Render("主菜单") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  或  j / k") + strings.Repeat(" ", 3) + "导航选项\n")
+	b.WriteString("  " + green.Render("1 - 7") + strings.Repeat(" ", 13) + "直接跳转\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "选择当前项\n")
 	b.WriteString("\n")
 
 	// My Cards
-	b.WriteString("  " + cyan.Render("MY CARDS") + "\n")
-	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload from chain\n")
-	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "Find neighbor cards\n")
-	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "List this card for sale\n")
-	b.WriteString("  " + green.Render("↑ / ↓") + strings.Repeat(" ", 10) + "Select card\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Card details\n")
+	b.WriteString("  " + cyan.Render("我的卡片") + "\n")
+	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "从链上刷新\n")
+	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "查找邻居卡\n")
+	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "挂售此卡\n")
+	b.WriteString("  " + green.Render("↑ / ↓") + strings.Repeat(" ", 10) + "选择卡片\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "卡片详情\n")
 	b.WriteString("\n")
 
 	// Marketplace
-	b.WriteString("  " + cyan.Render("MARKETPLACE") + "\n")
-	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Select listing\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Card details\n")
-	b.WriteString("  " + green.Render("B") + strings.Repeat(" ", 14) + "Buy selected\n")
-	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "Next / Prev page\n")
-	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload listings\n")
+	b.WriteString("  " + cyan.Render("市场") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  或  j / k") + strings.Repeat(" ", 3) + "选择挂售\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "卡片详情\n")
+	b.WriteString("  " + green.Render("B") + strings.Repeat(" ", 14) + "购买选中\n")
+	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "下一页 / 上一页\n")
+	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "刷新挂售\n")
 	b.WriteString("\n")
 
 	// Discover
-	b.WriteString("  " + cyan.Render("DISCOVER") + "\n")
-	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Select card\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Card details\n")
-	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "Next / Prev page\n")
-	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload\n")
+	b.WriteString("  " + cyan.Render("发现") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  或  j / k") + strings.Repeat(" ", 3) + "选择卡片\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "卡片详情\n")
+	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "下一页 / 上一页\n")
+	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "刷新\n")
 	b.WriteString("\n")
 
 	// Card Detail
-	b.WriteString("  " + cyan.Render("CARD DETAIL") + "\n")
-	b.WriteString("  " + green.Render("B") + strings.Repeat(" ", 14) + "Buy (if listed)\n")
-	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "List for sale (my card)\n")
-	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "Neighbors (my card)\n")
-	b.WriteString("  " + green.Render("U") + strings.Repeat(" ", 14) + "View owner profile\n")
-	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Back\n")
+	b.WriteString("  " + cyan.Render("卡片详情") + "\n")
+	b.WriteString("  " + green.Render("B") + strings.Repeat(" ", 14) + "购买（若已挂售）\n")
+	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "挂售（我的卡）\n")
+	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "邻居（我的卡）\n")
+	b.WriteString("  " + green.Render("U") + strings.Repeat(" ", 14) + "查看主人主页\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "返回\n")
 	b.WriteString("\n")
 
 	// List Card
-	b.WriteString("  " + cyan.Render("LIST CARD FOR SALE") + "\n")
-	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Pick a card to list\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Confirm listing\n")
-	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Cancel / go back\n")
+	b.WriteString("  " + cyan.Render("挂售卡片") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  或  j / k") + strings.Repeat(" ", 3) + "选择要挂售的卡\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "确认挂售\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "取消 / 返回\n")
 	b.WriteString("\n")
 
 	// Quiz
-	b.WriteString("  " + cyan.Render("QUIZ") + "\n")
-	b.WriteString("  " + green.Render("1 - 4") + strings.Repeat(" ", 13) + "Select answer\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Next question\n")
+	b.WriteString("  " + cyan.Render("答题") + "\n")
+	b.WriteString("  " + green.Render("1 - 4") + strings.Repeat(" ", 13) + "选择答案\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "下一题\n")
 	b.WriteString("\n")
 
 	// Chat
-	b.WriteString("  " + cyan.Render("CREW CHAT") + "\n")
-	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Send message\n")
-	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Leave chat\n")
+	b.WriteString("  " + cyan.Render("聊天室") + "\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "发送消息\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "离开聊天\n")
 	b.WriteString("\n")
 
-	b.WriteString(dim.Render("  Press any key to close  ·  Enjoy Geoyuan! 🌍"))
+	b.WriteString(dim.Render("  按任意键关闭  ·  玩得开心！🌍"))
 	return b.String()
 }
 
@@ -3578,7 +3578,7 @@ func (m Model) viewDiscover() string {
 		content.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.discoverErr)) + "\n\n")
 		content.WriteString(dim.Render("  R retry · Esc back\n"))
 	} else {
-		content.WriteString(neon.Render(fmt.Sprintf("  🌐 Discover — every card on-chain   (%d total)", m.discoverCount)) + "\n\n")
+		content.WriteString(neon.Render(fmt.Sprintf("  🌐 发现 — 链上每一张卡片   （共 %d 张）", m.discoverCount)) + "\n\n")
 		if len(m.discoverCards) == 0 {
 			content.WriteString(dim.Render("  📭 No cards minted yet.\n"))
 		} else {

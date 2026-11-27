@@ -469,7 +469,7 @@ func RenderRegisterCard(username string, charCount, maxLen int, hint string) str
 	countStr := lipgloss.NewStyle().Foreground(countColor).Bold(true).Render(fmt.Sprintf("%d/%d", charCount, maxLen))
 
 	// placeholder
-	placeholder := dim.Render("enter your callsign...")
+	placeholder := dim.Render("输入你的呼号...")
 	if username != "" {
 		placeholder = ""
 	}
@@ -479,9 +479,9 @@ func RenderRegisterCard(username string, charCount, maxLen int, hint string) str
 
 	content := strings.Join([]string{
 		"",
-		"  " + gold.Render("⚡  CREATE YOUR GEOYUAN ID"),
+		"  " + gold.Render("⚡  创建你的 GEOYUAN ID"),
 		"",
-		"  " + dim.Render("Username"),
+		"  " + dim.Render("用户名"),
 		"  " + underline + "  " + countStr,
 		"",
 		"  " + cyan.Render("> ") + username + placeholder,
@@ -492,10 +492,10 @@ func RenderRegisterCard(username string, charCount, maxLen int, hint string) str
 	if hint != "" {
 		content += "\n  " + red.Render("✗  "+hint) + "\n"
 	} else {
-		content += "\n  " + dim.Render("💡  3-20 chars · letters / numbers / hyphen only") + "\n"
+		content += "\n  " + dim.Render("💡  3-20 字 · 仅字母/数字/连字符") + "\n"
 	}
 
-	content += "\n  " + dim.Render("↵ Confirm  ·  Esc Quit  ·  :redeem <token>")
+	content += "\n  " + dim.Render("↵ 确认  ·  Esc 退出  ·  :redeem <token>")
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -570,18 +570,18 @@ func RenderGlowBox(content string, width int, colors []lipgloss.Color) string {
 // RenderWelcomeCard 注册页主欢迎卡 — 用 lipgloss Border 保证渲染正确
 func RenderWelcomeCard() string {
 	// Geoyuan 彩虹高亮的描述
-	line1 := "You've found the gateway to " + RainbowText("Geoyuan") + " —"
+	line1 := "你已找到通往 " + RainbowText("Geoyuan") + " 的入口 —"
 
 	content := strings.Join([]string{
 		"",
-		"  🛰️  Welcome, Buddy",
+		"  🛰️  欢迎，伙伴",
 		"",
 		"  " + line1,
-		"  an exclusive team of AI engineers and builders.",
+		"  一个 AI 工程师和建设者的专属团队。",
 		"",
-		"  Pass the AI recruitment test to earn your place.",
+		"  通过 AI 招聘测试，赢得你的席位。",
 		"",
-		"  💡  30 questions  ·  6 min  ·  80% pass threshold",
+		"  💡  30 道题  ·  6 分钟  ·  80% 通过线",
 	}, "\n")
 
 	return lipgloss.NewStyle().
@@ -623,21 +623,21 @@ func stripANSI(s string) string {
 func RenderCongratsPass(score, total int) string {
 	card := fmt.Sprintf(`
   ╔═══════════════════════════════════════════════════════════════════╗
-  ║  ✨   🎉   🌟   🏅  MISSION COMPLETE  🏅   🌟   🎉   ✨             ║
+  ║  ✨   🎉   🌟   🏅  任务完成  🏅   🌟   🎉   ✨               ║
   ║                                                                   ║
   ║    🌍  Geoyuan 准入认证通过                                        ║
   ║    ✅  30/30  AI 题库 · 区块链存证                                ║
   ║                                                                   ║
   ║    ┌─────────────────────────────────────────────────────────┐    ║
-  ║    │  🎴  Mint 专属 Geo-Card  ·  绑定经纬度 ·  Polygon 链上   │    ║
+  ║    │  🎴  铸造专属 Geo-Card  ·  绑定经纬度 ·  Polygon 链上    │    ║
   ║    │  💬  私密聊天室解锁      ·  全网 geo-peer 匹配          │    ║
-  ║    │  💰  Marketplace 挂售     ·  链上 P2P 交易              │    ║
+  ║    │  💰  市场挂售           ·  链上 P2P 交易               │    ║
   ║    └─────────────────────────────────────────────────────────┘    ║
   ║                                                                   ║
-  ║    Score: %d / %d   (%d%%)   ⚡   Pass ≥ %d                       ║
+  ║    得分：%d / %d   (%d%%)   ⚡   通过 ≥ %d                       ║
   ║                                                                   ║
   ║    ┌─ 下一步 ─────────────────────────────────────────────────┐   ║
-  ║    │  ⏎  进入主菜单  ·  1 → Mint  ·  2 → Chat  ·  3 → Market │   ║
+  ║    │  ⏎  进入主菜单  ·  1 → 铸造  ·  2 → 聊天  ·  3 → 市场  │   ║
   ║    └──────────────────────────────────────────────────────────┘   ║
   ╚═══════════════════════════════════════════════════════════════════╝
 `, score, total, score*100/total, PassThreshold)
@@ -650,13 +650,13 @@ func RenderCongratsPass(score, total int) string {
 	pink := lipgloss.NewStyle().Foreground(cNeonPink).Bold(true)
 
 	// 关键词着色
-	card = strings.ReplaceAll(card, "MISSION COMPLETE", pink.Render("MISSION COMPLETE"))
+	card = strings.ReplaceAll(card, "任务完成", pink.Render("任务完成"))
 	card = strings.ReplaceAll(card, "Geoyuan", purple.Render("Geoyuan"))
-	card = strings.ReplaceAll(card, "Score:", green.Render("Score:"))
+	card = strings.ReplaceAll(card, "得分：", green.Render("得分："))
 	card = strings.ReplaceAll(card, "下一步", cyan.Render("下一步"))
-	card = strings.ReplaceAll(card, "🎴 Mint", gold.Render("🎴 Mint"))
+	card = strings.ReplaceAll(card, "🎴 铸造", gold.Render("🎴 铸造"))
 	card = strings.ReplaceAll(card, "💬", cyan.Render("💬"))
-	card = strings.ReplaceAll(card, "Marketplace", gold.Render("Marketplace"))
+	card = strings.ReplaceAll(card, "市场挂售", gold.Render("市场挂售"))
 	card = strings.ReplaceAll(card, "✅", green.Render("✅"))
 	card = strings.ReplaceAll(card, "⏎  进入主菜单", purple.Render("⏎  进入主菜单"))
 

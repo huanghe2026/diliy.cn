@@ -215,42 +215,42 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
 	var sb strings.Builder
-	sb.WriteString(neon.Render("🎴 Mint a Geoyuan Card") + "\n\n")
+	sb.WriteString(neon.Render("🎴 铸造 Geoyuan 卡片") + "\n\n")
 
 	switch p.step {
 	case 0:
-		sb.WriteString(fmt.Sprintf("  📍 Your location:  %s\n", geoLoc))
+		sb.WriteString(fmt.Sprintf("  📍 你的位置：  %s\n", geoLoc))
 		if p.walletAddr != "" {
-			sb.WriteString(fmt.Sprintf("  👛 Your wallet:    %s\n", p.walletAddr))
+			sb.WriteString(fmt.Sprintf("  👛 你的钱包：  %s\n", p.walletAddr))
 		}
-		sb.WriteString(fmt.Sprintf("  🔷 H3 cell:        %s  (res=%d, ~%.1f km²)\n",
+		sb.WriteString(fmt.Sprintf("  🔷 H3 网格：    %s  (res=%d, ~%.1f km²)\n",
 			H3Hex(p.h3Index), p.res, h3.AreaKm2(p.h3Index)))
-		sb.WriteString(fmt.Sprintf("  📏 Center:          %.4f°N, %.4f°E\n", p.lat, p.lon))
+		sb.WriteString(fmt.Sprintf("  📏 中心：        %.4f°N, %.4f°E\n", p.lat, p.lon))
 		ns := h3.Neighbors(p.h3Index)
-		sb.WriteString(fmt.Sprintf("  🧭 Neighbors:      %d cells (k=1 ring → 7 total)\n", len(ns)))
+		sb.WriteString(fmt.Sprintf("  🧭 邻居：        %d 个网格（k=1 环 → 共 7 个）\n", len(ns)))
 		sh := h3.Encode(31.2304, 121.4737, p.res)
-		sb.WriteString(fmt.Sprintf("  🗺️  Grid distance to Shanghai: %d hops\n", h3.GridDistance(p.h3Index, sh.Index)))
+		sb.WriteString(fmt.Sprintf("  🗺️  到上海的网格距离：%d 跳\n", h3.GridDistance(p.h3Index, sh.Index)))
 		sb.WriteString("\n")
 		sb.WriteString("  ┌─────────────────────────────────────┐\n")
-		sb.WriteString("  │  Press " + cyan.Render("Enter") + " to mint a card here        │\n")
-		sb.WriteString("  │  Press " + dim.Render("Esc") + "  to cancel                     │\n")
+		sb.WriteString("  │  按 " + cyan.Render("Enter") + " 在此铸造卡片              │\n")
+		sb.WriteString("  │  按 " + dim.Render("Esc") + "  取消                      │\n")
 		sb.WriteString("  └─────────────────────────────────────┘\n")
 
 	case 1:
-		sb.WriteString("  " + cyan.Render("Step 1/3") + "  Card title (2-30 chars)\n\n")
+		sb.WriteString("  " + cyan.Render("第 1/3 步") + "  卡片标题（2-30 字）\n\n")
 		sb.WriteString("  > " + p.titleIn.View() + "\n")
 		if p.err != "" {
 			sb.WriteString(red.Render("  ✗ "+p.err) + "\n")
 		}
 
 	case 2:
-		sb.WriteString("  " + cyan.Render("Step 2/3") + "  Short description\n\n")
+		sb.WriteString("  " + cyan.Render("第 2/3 步") + "  简短描述\n\n")
 		sb.WriteString("  > " + p.descIn.View() + "\n")
 
 	case 3:
-		sb.WriteString("  " + cyan.Render("Step 3/3") + "  Neon color (hex e.g. #c77dff)\n\n")
+		sb.WriteString("  " + cyan.Render("第 3/3 步") + "  霓虹颜色（十六进制，如 #c77dff）\n\n")
 		sb.WriteString("  > " + p.colorIn.View() + "\n\n")
-		sb.WriteString("  Palette: ")
+		sb.WriteString("  色板： ")
 		for _, c := range []string{"#c77dff", "#ff6ec7", "#00f5ff", "#00ff9d", "#ffd700", "#ff3864"} {
 			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c[1:])).Render("■ "))
 		}
@@ -258,59 +258,59 @@ func (p PhaseMint) View(width, height int, geoLoc string) string {
 
 	case 4:
 		// 确认页（同时也是错误重试页）
-		sb.WriteString("  " + cyan.Render("Confirm — Mint this card?") + "\n\n")
-		sb.WriteString(fmt.Sprintf("    Title:     %s\n", p.titleIn.Value()))
-		sb.WriteString(fmt.Sprintf("    Desc:      %s\n", p.descIn.Value()))
-		sb.WriteString(fmt.Sprintf("    Color:     %s\n", p.colorIn.Value()))
-		sb.WriteString(fmt.Sprintf("    Location:  %s\n", geoLoc))
-		sb.WriteString(fmt.Sprintf("    H3 Cell:   %s (res=%d)\n", H3Hex(p.h3Index), p.res))
-		sb.WriteString(fmt.Sprintf("    Lat/Lon:   %.4f, %.4f\n", p.lat, p.lon))
+		sb.WriteString("  " + cyan.Render("确认 — 铸造这张卡？") + "\n\n")
+		sb.WriteString(fmt.Sprintf("    标题：     %s\n", p.titleIn.Value()))
+		sb.WriteString(fmt.Sprintf("    描述：     %s\n", p.descIn.Value()))
+		sb.WriteString(fmt.Sprintf("    颜色：     %s\n", p.colorIn.Value()))
+		sb.WriteString(fmt.Sprintf("    位置：     %s\n", geoLoc))
+		sb.WriteString(fmt.Sprintf("    H3 网格：  %s (res=%d)\n", H3Hex(p.h3Index), p.res))
+		sb.WriteString(fmt.Sprintf("    经纬度：   %.4f, %.4f\n", p.lat, p.lon))
 		if p.walletAddr != "" {
-			sb.WriteString(fmt.Sprintf("    Wallet:    %s\n", p.walletAddr))
+			sb.WriteString(fmt.Sprintf("    钱包：     %s\n", p.walletAddr))
 		}
 		if p.ready {
-			sb.WriteString("    Chain:     " + green.Render("Polygon Amoy (live)") + "\n")
+			sb.WriteString("    链：       " + green.Render("Polygon Amoy（正式）") + "\n")
 		} else {
-			sb.WriteString("    Chain:     " + yellow.Render("offline preview") + "\n")
+			sb.WriteString("    链：       " + yellow.Render("离线预览") + "\n")
 		}
-		sb.WriteString("\n  [" + green.Render("Y") + "] Mint  [" + dim.Render("N") + "] Edit  [" + dim.Render("Esc") + "] Cancel\n")
+		sb.WriteString("\n  [" + green.Render("Y") + "] 铸造  [" + dim.Render("N") + "] 修改  [" + dim.Render("Esc") + "] 取消\n")
 		if p.mintErr != nil {
-			sb.WriteString(red.Render(fmt.Sprintf("\n  ✗ Previous attempt failed: %v", p.mintErr)) + "\n")
+			sb.WriteString(red.Render(fmt.Sprintf("\n  ✗ 上次尝试失败：%v", p.mintErr)) + "\n")
 		}
 
 	case 5:
 		if p.minting {
-			sb.WriteString(yellow.Render("  ⛓️  Submitting transaction to Polygon Amoy...") + "\n")
-			sb.WriteString(dim.Render("     (this may take 30-60 seconds)") + "\n")
-			sb.WriteString("\n  Press " + dim.Render("Enter/Esc") + " to wait — it keeps going in background\n")
+			sb.WriteString(yellow.Render("  ⛓️  正在向 Polygon Amoy 提交交易...") + "\n")
+			sb.WriteString(dim.Render("     （可能需要 30-60 秒）") + "\n")
+			sb.WriteString("\n  按 " + dim.Render("Enter/Esc") + " 等待 — 交易在后台继续\n")
 			return sb.String()
 		}
 		if p.mintErr != nil {
-			sb.WriteString(red.Render("  ✗ Mint failed") + "\n\n")
-			sb.WriteString(fmt.Sprintf("    Reason: %v\n", p.mintErr))
-			sb.WriteString("\n  Press " + cyan.Render("Enter") + " or " + dim.Render("Esc") + " to return\n")
+			sb.WriteString(red.Render("  ✗ 铸造失败") + "\n\n")
+			sb.WriteString(fmt.Sprintf("    原因：%v\n", p.mintErr))
+			sb.WriteString("\n  按 " + cyan.Render("Enter") + " 或 " + dim.Render("Esc") + " 返回\n")
 			return sb.String()
 		}
 		// 成功
-		sb.WriteString(green.Render("  ✅ Card minted successfully on Polygon Amoy!") + "\n\n")
+		sb.WriteString(green.Render("  ✅ 卡片已在 Polygon Amoy 上铸造成功！") + "\n\n")
 		if p.mintResult != nil {
 			if p.mintResult.Preview {
-				sb.WriteString(yellow.Render("  (offline preview — contract not ready)") + "\n\n")
+				sb.WriteString(yellow.Render("  （离线预览 — 合约未就绪）") + "\n\n")
 			}
-			sb.WriteString(fmt.Sprintf("    Title:     %s\n", p.mintResult.Title))
-			sb.WriteString(fmt.Sprintf("    Desc:      %s\n", p.mintResult.Description))
-			sb.WriteString(fmt.Sprintf("    Color:     %s\n", p.mintResult.Color))
-			sb.WriteString(fmt.Sprintf("    H3 Cell:   %s\n", H3Hex(p.mintResult.H3Index)))
-			sb.WriteString(fmt.Sprintf("    Lat/Lon:   %.4f, %.4f\n", p.mintResult.Lat, p.mintResult.Lon))
+			sb.WriteString(fmt.Sprintf("    标题：     %s\n", p.mintResult.Title))
+			sb.WriteString(fmt.Sprintf("    描述：     %s\n", p.mintResult.Description))
+			sb.WriteString(fmt.Sprintf("    颜色：     %s\n", p.mintResult.Color))
+			sb.WriteString(fmt.Sprintf("    H3 网格：  %s\n", H3Hex(p.mintResult.H3Index)))
+			sb.WriteString(fmt.Sprintf("    经纬度：   %.4f, %.4f\n", p.mintResult.Lat, p.mintResult.Lon))
 			if p.mintResult.TokenID != nil && p.mintResult.TokenID.Sign() > 0 {
-				sb.WriteString(fmt.Sprintf("    Token ID:  #%s\n", p.mintResult.TokenID.Text(10)))
+				sb.WriteString(fmt.Sprintf("    Token ID： #%s\n", p.mintResult.TokenID.Text(10)))
 			}
 			if !p.mintResult.Preview {
-				sb.WriteString(fmt.Sprintf("    Tx Hash:   %s\n", p.mintResult.TxHash))
-				sb.WriteString(fmt.Sprintf("    Block:     %d\n", p.mintResult.Block))
+				sb.WriteString(fmt.Sprintf("    交易哈希： %s\n", p.mintResult.TxHash))
+				sb.WriteString(fmt.Sprintf("    区块：     %d\n", p.mintResult.Block))
 			}
 		}
-		sb.WriteString("\n  Press " + cyan.Render("Enter") + " or " + dim.Render("Esc") + " to return\n")
+		sb.WriteString("\n  按 " + cyan.Render("Enter") + " 或 " + dim.Render("Esc") + " 返回\n")
 	}
 
 	return sb.String()
