@@ -4,6 +4,15 @@
 // Answer 为正确选项索引（0=A, 1=B, 2=C, 3=D）。
 package questions
 
+import (
+	_ "embed"
+	"encoding/json"
+	"log"
+)
+
+//go:embed questionbank.json
+var questionBankJSON []byte
+
 // Question 一道选择题。
 type Question struct {
 	Q       string    // 题干
@@ -14,6 +23,17 @@ type Question struct {
 
 // All 返回全部题库（30 题）。调用方不应修改返回值。
 func All() []Question { return all }
+
+// LoadBank 返回预生成题库（10 套 × 30 题，每套可独立作为一次测试）。
+// 解析失败时返回 nil，调用方应回退到 All()。
+func LoadBank() [][]Question {
+	var bank [][]Question
+	if err := json.Unmarshal(questionBankJSON, &bank); err != nil {
+		log.Printf("[questions] load question bank: %v", err)
+		return nil
+	}
+	return bank
+}
 
 var all = []Question{
 	// ───────── 编程 / 算法 / 数据结构 ─────────

@@ -8,10 +8,10 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"math/big"
+	"math/rand"
 	"regexp"
 	"strconv"
 	"strings"
@@ -331,6 +331,7 @@ type (
 	quizLoadedMsg struct {
 		questions []questions.Question
 		err       error
+		source    string // "BANK" 预生成题库 / "LOCAL" 内置 fallback
 	}
 	discoverLoadedMsg struct {
 		cards []card.Card
@@ -397,11 +398,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quizLoadedMsg:
 		// ✅ AI 试题生成完成（异步）— 切 Quiz 阶段
 		qs := msg.questions
-		m.quizSource = "AI"
+		m.quizSource = msg.source
+		if m.quizSource == "" {
+			m.quizSource = "BANK"
+		}
 		if msg.err != nil || len(qs) == 0 {
-			log.Printf("[tui] quizLoadedMsg generate fallback: %v", msg.err)
+			log.Printf("[tui] quizLoadedMsg fallback: %v", msg.err)
 			qs = questions.All()
-			m.quizSource = "LOCAL" // 🧠 标记 fallback 来源
+			m.quizSource = "LOCAL"
 		}
 		m.questions = qs
 		m.answers = make([]int, len(qs))
@@ -1614,12 +1618,12 @@ func (m Model) viewQuiz() string {
 	} else {
 		hint = "  ↑↓/jk 选择  ·  1-4 快选并前进  ·  ⏎ 提交前进  ·  Esc 退出"
 	}
-	// 🧠 题目来源标记 — AI vs LOCAL fallback
+	// 🧠 题目来源标记 — 预生成题库 vs 内置 fallback
 	if m.quizSource == "LOCAL" {
-		hint = lipgloss.NewStyle().Foreground(cNeonGold).Render("  ⚠ AI 超时 · 当前使用本地题库") + "\n" +
+		hint = lipgloss.NewStyle().Foreground(cNeonGold).Render("  ⚠ 预生成题库不可用 · 使用内置题库") + "\n" +
 			lipgloss.NewStyle().Foreground(cMuted).Render(hint)
 	} else {
-		hint = lipgloss.NewStyle().Foreground(cNeonCyan).Render("  🧠 AI 动态生成题库 · 每次不同") + "\n" +
+		hint = lipgloss.NewStyle().Foreground(cNeonCyan).Render("  🧠 预生成 AI 题库 · 随机一套") + "\n" +
 			lipgloss.NewStyle().Foreground(cMuted).Render(hint)
 	}
 	content.WriteString(hint)
@@ -1689,33 +1693,18 @@ func renderQuizProgress(cur, total int, answers []int, answered int) string {
 	return barLine.String() + "\n" + dotLine.String()
 }
 
-// startQuizCmd — 异步 AI 试题生成（不阻塞 UI）
+// startQuizCmd — 从预生成题库随机取一套（秒开，无需实时 AI 生成）
 // 用法: m.phase = PhaseQuizLoading; return m, m.startQuizCmd()
 func (m *Model) startQuizCmd() tea.Cmd {
-	gen := m.generator
 	return func() tea.Msg {
-		timeout := 90 * time.Second
-		if gen != nil {
-			timeout = gen.Cfg().Timeout
-			if timeout < 10*time.Second {
-				timeout = 90 * time.Second
-			}
+		bank := questions.LoadBank()
+		if len(bank) > 0 {
+			set := bank[rand.Intn(len(bank))]
+			return quizLoadedMsg{questions: set, source: "BANK"}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		var qs []questions.Question
-		var err error
-		if gen != nil {
-			qs, err = gen.Generate(ctx, QuizCount)
-			if err != nil || len(qs) == 0 {
-				log.Printf("[tui] startQuizCmd AI generate fallback: %v", err)
-				qs = questions.All()
-			}
-		} else {
-			qs = questions.All()
-		}
-		return quizLoadedMsg{questions: qs, err: err}
+		// 预生成题库缺失时回退到内置题库
+		log.Printf("[tui] question bank empty → fallback to builtin")
+		return quizLoadedMsg{questions: questions.All(), source: "LOCAL"}
 	}
 }
 
@@ -1729,9 +1718,8 @@ func (m Model) viewQuizLoading() string {
 	dim := lipgloss.NewStyle().Foreground(cMuted).Faint(true)
 
 	spinner := m.spinner()
-	content := gold.Render("  🧠  正在用 AI 生成 30 道试题...") + "\n\n" +
-		cyan.Render("  ") + spinner + "  " + cyan.Render("连接中 · 最长 90 秒") + "\n\n" +
-		dim.Render("  💡  如果 AI 超时，会自动切换到本地题库（30 题）") + "\n\n" +
+	content := gold.Render("  🧠  正在准备题目...") + "\n\n" +
+		cyan.Render("  ") + spinner + "  " + cyan.Render("从预生成题库随机抽取 30 题") + "\n\n" +
 		dim.Render("  按 Esc 取消")
 
 	cardWidth := adaptiveCardWidth(m.termWidth)
