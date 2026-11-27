@@ -557,15 +557,130 @@ func (s *Service) fetchMarketMeta(ctx context.Context, tokenIDs []*big.Int, pric
 				return
 			}
 			out[i] = MarketListing{
-				TokenID:     tid.String(),
-				Seller:      sellers[i].Hex(),
-				PriceWei:    prices[i].String(),
-				PriceMATIC:  priceMATIC(prices[i]),
-				Title:       md.Title,
-				Color:       md.Color,
-				Lat:         float64(md.LatE4) / 10000.0,
-				Lon:         float64(md.LonE4) / 10000.0,
-				H3Index:     md.H3Index,
+				TokenID:    tid.String(),
+				Seller:     sellers[i].Hex(),
+				PriceWei:   prices[i].String(),
+				PriceMATIC: priceMATIC(prices[i]),
+				Title:      md.Title,
+				Color:      md.Color,
+				Lat:        float64(md.LatE4) / 10000.0,
+				Lon:        float64(md.LonE4) / 10000.0,
+				H3Index:    md.H3Index,
+			}
+		}(i, tid)
+	}
+	wg.Wait()
+	return out
+}
+
+// ─── 全网浏览（Discover）─────────────────────────────
+
+// GetCard — 查询单张卡的完整信息（metadata + owner）
+func (s *Service) GetCard(tokenID uint64) (*Card, error) {
+	if s.gyc == nil {
+		return nil, fmt.Errorf("合约未就绪")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tid := big.NewInt(int64(tokenID))
+	owner, err := s.gyc.OwnerOf(&bind.CallOpts{Context: ctx}, tid)
+	if err != nil {
+		return nil, fmt.Errorf("ownerOf: %w", err)
+	}
+	md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
+	if err != nil {
+		return nil, fmt.Errorf("metadata: %w", err)
+	}
+	return &Card{
+		TokenID:   tid.String(),
+		H3Index:   md.H3Index,
+		Title:     md.Title,
+		Desc:      md.Description,
+		Color:     md.Color,
+		Lat:       float64(md.LatE4) / 10000.0,
+		Lon:       float64(md.LonE4) / 10000.0,
+		Res:       int(md.Res),
+		Timestamp: md.Timestamp.Int64(),
+		Owner:     owner.Hex(),
+	}, nil
+}
+
+// TotalSupply — 链上已铸造卡片总数
+func (s *Service) TotalSupply() (uint64, error) {
+	if s.gyc == nil {
+		return 0, fmt.Errorf("合约未就绪")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	n, err := s.gyc.TotalSupply(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return 0, fmt.Errorf("totalSupply: %w", err)
+	}
+	return n.Uint64(), nil
+}
+
+// AllCards — 遍历链上所有已铸卡片（分页，含 owner）。
+// tokenId 从 1 到 totalSupply 连续，offset/limit 直接切片。
+func (s *Service) AllCards(offset, limit uint64) ([]Card, uint64, error) {
+	if s.gyc == nil {
+		return nil, 0, fmt.Errorf("合约未就绪")
+	}
+	total, err := s.TotalSupply()
+	if err != nil {
+		return nil, 0, err
+	}
+	if offset >= total {
+		return []Card{}, total, nil
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// tokenId 从 1 开始（合约里 tokenId = totalSupply，首张为 1）
+	tokenIDs := make([]*big.Int, 0, end-offset)
+	for id := offset + 1; id <= end; id++ {
+		tokenIDs = append(tokenIDs, big.NewInt(int64(id)))
+	}
+	return s.fetchAllCards(ctx, tokenIDs), total, nil
+}
+
+// fetchAllCards — 并发拉一组 tokenId 的 metadata + ownerOf（Discover 用，每张 owner 不同）
+func (s *Service) fetchAllCards(ctx context.Context, tokenIDs []*big.Int) []Card {
+	out := make([]Card, len(tokenIDs))
+	sem := make(chan struct{}, metadataConcurrency)
+	var wg sync.WaitGroup
+	for i, tid := range tokenIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, tid *big.Int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			ownerHex := ""
+			if owner, err := s.gyc.OwnerOf(&bind.CallOpts{Context: ctx}, tid); err == nil {
+				ownerHex = owner.Hex()
+			}
+
+			md, err := s.gyc.Metadata(&bind.CallOpts{Context: ctx}, tid)
+			if err != nil {
+				out[i] = Card{TokenID: tid.String(), Owner: ownerHex}
+				return
+			}
+			out[i] = Card{
+				TokenID:   tid.String(),
+				H3Index:   md.H3Index,
+				Title:     md.Title,
+				Desc:      md.Description,
+				Color:     md.Color,
+				Lat:       float64(md.LatE4) / 10000.0,
+				Lon:       float64(md.LonE4) / 10000.0,
+				Res:       int(md.Res),
+				Timestamp: md.Timestamp.Int64(),
+				Owner:     ownerHex,
 			}
 		}(i, tid)
 	}

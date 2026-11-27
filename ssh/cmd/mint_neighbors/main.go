@@ -32,7 +32,7 @@ import (
 
 const (
 	rpcURL      = "https://polygon-amoy-bor-rpc.publicnode.com"
-	contractHex = "0x2797C96bCC61622ca9Fa93e8478d67FB5De28e3E"
+	contractHex = "0xCB441824e3A67Fb30e89A78d9dcFf4F9E618D748"
 	chainID     = int64(80002)
 	centerCell  = uint64(0x89309a553dbffff)
 )

@@ -55,7 +55,7 @@ type WebPass struct {
 	Score     int
 	Total     int
 	Passed    bool
-	Used      bool       // 是否已绑定到 SSH 用户
+	Used      bool // 是否已绑定到 SSH 用户
 	CreatedAt string
 }
 
@@ -164,6 +164,44 @@ func (s *Store) GetUserByUsername(name string) (*User, error) {
 		return nil, err
 	}
 	return u, nil
+}
+
+// GetUserByID 按用户 ID 查用户；不存在返回 (nil, nil)
+func (s *Store) GetUserByID(id int64) (*User, error) {
+	u := &User{}
+	err := s.db.QueryRow(
+		`SELECT id, username, COALESCE(display_name,''), COALESCE(tagline,''), COALESCE(lang,'en'), pubkey_fingerprint, status, created_at FROM users WHERE id = ?`,
+		id,
+	).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Tagline, &u.Lang, &u.PubKeyFingerprint, &u.Status, &u.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// ListApprovedUsers 列出所有已通过准入的用户（个人主页反查 owner → 用户用）
+func (s *Store) ListApprovedUsers() ([]User, error) {
+	rows, err := s.db.Query(
+		`SELECT id, username, COALESCE(display_name,''), COALESCE(tagline,''), COALESCE(lang,'en'), pubkey_fingerprint, status, created_at FROM users WHERE status = ? ORDER BY id`,
+		StatusApproved,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Tagline, &u.Lang, &u.PubKeyFingerprint, &u.Status, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // CreateUser 新建用户（pending 状态），返回 user id

@@ -38,8 +38,8 @@ const QuizCount = 30
 type Phase int
 
 const (
-	PhaseRegister Phase = iota
-	PhaseQuizLoading   // 🔁 NEW: AI 试题生成中（异步 loading）
+	PhaseRegister    Phase = iota
+	PhaseQuizLoading       // 🔁 NEW: AI 试题生成中（异步 loading）
 	PhaseQuiz
 	PhaseResult
 	PhaseWelcome
@@ -50,6 +50,9 @@ const (
 	PhaseMyCards     // 我的卡片列表
 	PhaseMarket      // 全市场挂售浏览
 	PhaseListCard    // 把自己的卡挂售
+	PhaseCardDetail  // 单张卡片详情（Market/MyCards/Discover 复用）
+	PhaseDiscover    // 全网卡片浏览（遍历链上所有已铸卡片）
+	PhaseProfile     // 个人主页（他人资料 + 全部卡）
 	PhaseQuitConfirm // ⚠️ 退出确认弹窗（防误触）
 	PhaseHelp        // ? 帮助浮层（覆盖任意页面之上）
 )
@@ -72,10 +75,10 @@ const (
 type Model struct {
 	store     *store.Store
 	generator *questiongen.Generator
-	fp          string
-	user        *store.User
-	phase       Phase
-	prevPhase   Phase // 帮助浮层关闭后回去的阶段
+	fp        string
+	user      *store.User
+	phase     Phase
+	prevPhase Phase // 帮助浮层关闭后回去的阶段
 
 	// 🧭 终端尺寸（WindowSizeMsg 注入）— 用来让 View() 自适应
 	termWidth  int
@@ -87,12 +90,12 @@ type Model struct {
 	geoLoc     string // 地理位置 (e.g. "Hangzhou, China")
 
 	// 注册向导（4 个字段）
-	nameInput      textinput.Model // field 0: username
-	displayInput   textinput.Model // field 1: display name (optional)
-	taglineInput   textinput.Model // field 2: tagline (optional)
-	langCursor     int             // field 3: 0=zh 1=en
-	registerStep   int             // 0-3 当前字段
-	inputErr       string
+	nameInput    textinput.Model // field 0: username
+	displayInput textinput.Model // field 1: display name (optional)
+	taglineInput textinput.Model // field 2: tagline (optional)
+	langCursor   int             // field 3: 0=zh 1=en
+	registerStep int             // 0-3 当前字段
+	inputErr     string
 
 	// 答题
 	questions  []questions.Question
@@ -102,8 +105,8 @@ type Model struct {
 	quizSource string // "AI" 或 "LOCAL" — 用户知道当前题目来源
 
 	// 动画状态（spinner 帧 + cursor blink 帧，全局共享）
-	spinnerFrame   uint
-	cursorBlink    uint
+	spinnerFrame uint
+	cursorBlink  uint
 
 	// 结果
 	score  int
@@ -129,6 +132,7 @@ type Model struct {
 	myCardsCache    []card.Card
 	myCardsErr      error
 	myCardsLoading  bool
+	myCardsSel      int // 当前选中的卡片索引（详情页入口）
 	neighborCache   []card.Card
 	neighborErr     error
 	neighborLoading bool
@@ -137,21 +141,44 @@ type Model struct {
 	showNeighbors   bool
 
 	// 市场
-	marketListings  []card.MarketListing
-	marketErr       string
-	marketLoading   bool
+	marketListings   []card.MarketListing
+	marketErr        string
+	marketLoading    bool
 	marketListingSel int // 市场列表当前选中的 listing
-	marketOffset    uint64
-	marketCount     uint64
+	marketOffset     uint64
+	marketCount      uint64
 
 	// 挂售
-	listCardCursor int // My Cards 里选卡挂售的 cursor
-	listPriceWei   string // 用户输入的挂售价（wei 或 MATIC）
-	listInputFocus bool
-	listInput      textinput.Model
+	listCardCursor  int    // My Cards 里选卡挂售的 cursor
+	listPriceWei    string // 用户输入的挂售价（wei 或 MATIC）
+	listInputFocus  bool
+	listInput       textinput.Model
 	listCardLoading bool
-	listCardErr    string
-	listCardDone   bool
+	listCardErr     string
+	listCardDone    bool
+
+	// 🃏 卡片详情页（Market/MyCards/Discover 复用）
+	cardDetail        card.Card
+	cardDetailFrom    Phase // 从哪个页面进入，决定 Esc 返回目标 + 可用操作
+	cardDetailListed  bool  // 该卡当前是否在挂售（Market 进入才为 true，显示 Buy）
+	cardDetailOwner   *store.User
+	cardDetailLoading bool // 异步加载完整卡信息中
+
+	// 🌐 Discover 全网浏览
+	discoverCards   []card.Card
+	discoverErr     error
+	discoverLoading bool
+	discoverOffset  uint64
+	discoverCount   uint64
+	discoverSel     int
+
+	// 👤 个人主页
+	profileUser    *store.User
+	profileCards   []card.Card
+	profileErr     error
+	profileLoading bool
+	profileAddr    string
+	profileSel     int
 
 	// 状态
 	Done   bool
@@ -305,6 +332,19 @@ type (
 		questions []questions.Question
 		err       error
 	}
+	discoverLoadedMsg struct {
+		cards []card.Card
+		count uint64
+		err   error
+	}
+	profileLoadedMsg struct {
+		cards []card.Card
+		err   error
+	}
+	cardDetailLoadedMsg struct {
+		card card.Card
+		err  error
+	}
 )
 
 func receiveMsgs(sub *chat.Subscription) tea.Cmd {
@@ -421,11 +461,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.marketErr = "购买失败: " + msg.err.Error()
 		} else {
 			m.marketErr = ""
-			// 买完自动刷新
+			// 买完自动刷新并回到 Market
 			m.marketOffset = 0
 			m.marketListingSel = 0
 			m.marketLoading = true
+			m.phase = PhaseMarket
 			return m, m.loadMarketCmd()
+		}
+		return m, nil
+	case discoverLoadedMsg:
+		m.discoverCards = msg.cards
+		m.discoverCount = msg.count
+		m.discoverErr = msg.err
+		m.discoverLoading = false
+		if m.discoverSel >= len(m.discoverCards) && len(m.discoverCards) > 0 {
+			m.discoverSel = 0
+		}
+		return m, nil
+	case profileLoadedMsg:
+		m.profileCards = msg.cards
+		m.profileErr = msg.err
+		m.profileLoading = false
+		return m, nil
+	case cardDetailLoadedMsg:
+		m.cardDetailLoading = false
+		if msg.err == nil {
+			m.cardDetail = msg.card
+			m.cardDetailOwner = m.findUserByAddr(msg.card.Owner)
 		}
 		return m, nil
 	}
@@ -509,6 +571,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateMarket(msg)
 	case PhaseListCard:
 		return m.updateListCard(msg)
+	case PhaseCardDetail:
+		return m.updateCardDetail(msg)
+	case PhaseDiscover:
+		return m.updateDiscover(msg)
+	case PhaseProfile:
+		return m.updateProfile(msg)
 	case PhaseChat:
 		return m.updateChat(msg)
 	case PhaseQuitConfirm:
@@ -549,6 +617,12 @@ func (m Model) View() string {
 		return m.viewMarket()
 	case PhaseListCard:
 		return m.viewListCard()
+	case PhaseCardDetail:
+		return m.viewCardDetail()
+	case PhaseDiscover:
+		return m.viewDiscover()
+	case PhaseProfile:
+		return m.viewProfile()
 	case PhaseChat:
 		return m.viewChat()
 	case PhaseQuitConfirm:
@@ -650,10 +724,10 @@ func (m Model) statusLine() string {
 	phase := phaseBadge(m.phase)
 	compactPhase := compactPhaseBadge(m.phase)
 	variants := []struct {
-		phase       string
-		showWallet  bool
-		showChain   bool
-		keys        string
+		phase      string
+		showWallet bool
+		showChain  bool
+		keys       string
 	}{
 		{phase, true, true, "↑↓ Nav · Enter Select · ? Help · Esc Back"},
 		{phase, true, true, "? Help · Esc Back"},
@@ -875,7 +949,7 @@ func (m Model) userInfoShort() string {
 	}
 	return strings.Join(parts, " - ")
 }
-//
+
 //	📝 注册向导 — 4 字段同卡展示
 //
 // ═══════════════════════════════════════════════
@@ -924,11 +998,11 @@ func (m Model) viewRegister() string {
 
 	// ═══ 字段 0: Username ═══
 	content.WriteString(m.renderFieldRow(
-		"  Username",           // label
-		m.nameInput.Value(),   // value
-		0,                     // step index
-		true,                  // required
-		nil,                   // custom validator (nil = 默认)
+		"  Username",        // label
+		m.nameInput.Value(), // value
+		0,                   // step index
+		true,                // required
+		nil,                 // custom validator (nil = 默认)
 	))
 	content.WriteString("\n")
 
@@ -1140,7 +1214,7 @@ func (m *Model) focusRegisterStep(step int) {
 		m.displayInput.Focus()
 	case 2:
 		m.taglineInput.Focus()
-	// step 3: lang, 无焦点输入
+		// step 3: lang, 无焦点输入
 	}
 }
 
@@ -1335,13 +1409,13 @@ func (m Model) submitRegister() (tea.Model, tea.Cmd) {
 	}
 
 	m.user = &store.User{
-		ID:          uid,
-		Username:    username,
-		DisplayName: displayName,
-		Tagline:     tagline,
-		Lang:        lang,
+		ID:                uid,
+		Username:          username,
+		DisplayName:       displayName,
+		Tagline:           tagline,
+		Lang:              lang,
 		PubKeyFingerprint: m.fp,
-		Status:      store.StatusPending,
+		Status:            store.StatusPending,
 	}
 	m.inputErr = ""
 	m.phase = PhaseQuizLoading
@@ -2198,6 +2272,7 @@ var menuItems = []struct {
 	{"💬", "Crew Chat", "Talk with other Geoyuan builders"},
 	{"🔄", "Switch User", "Clear session · 换账号登录"},
 	{"🚪", "Exit", "Disconnect from SSH"},
+	{"🌐", "Discover", "Browse every card minted on-chain"},
 }
 
 func (m Model) viewMenu() string {
@@ -2209,24 +2284,20 @@ func (m Model) viewMenu() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(cNeonPurple).Bold(true).
 		Render("  ◆ Welcome back, Buddy — pick your mission") + "\n\n")
 
-	// Panel Card 网格：3 列 × 2 行
+	// Panel Card 网格：3 列，动态行数
 	cols := 3
 	padX := 2 // 两个 panel 之间的水平间距
 
-	// 先构建 2 行 panel 网格
 	linesPerCard := 5
-	rows := [][]string{{}, {}} // row 0, row 1 (3 + 3)
+	rowCount := (len(menuItems) + cols - 1) / cols
+	rows := make([][]string, rowCount)
 
 	for i, item := range menuItems {
 		row := i / cols
-		if row > 1 {
-			row = 1 // 安全 fallback
-		}
-		idxInRow := i % cols
 
 		// panel border + 内容
 		selected := i == m.menuCursor
-		panel := renderMenuPanel(item, idxInRow, selected)
+		panel := renderMenuPanel(item, i, selected)
 		rows[row] = append(rows[row], panel)
 	}
 
@@ -2260,12 +2331,12 @@ func (m Model) viewMenu() string {
 }
 
 // renderMenuPanel 渲染单个菜单 panel card
-// idxInRow: 0/1/2 第几个位置，决定数字快捷键 badge
+// index: 全局菜单项索引（0-based），决定数字快捷键 badge
 // selected: 是否当前选中
 func renderMenuPanel(item struct {
 	icon, label, desc string
-}, idxInRow int, selected bool) string {
-	numBadge := lipgloss.NewStyle().Foreground(cMuted).Render(fmt.Sprintf("[%d]", idxInRow+1))
+}, index int, selected bool) string {
+	numBadge := lipgloss.NewStyle().Foreground(cMuted).Render(fmt.Sprintf("[%d]", index+1))
 
 	// 边框颜色 + 背景
 	borderFG := cBorder
@@ -2352,7 +2423,7 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.menuCursor = 0
 		}
-	case "1", "2", "3", "4", "5", "6":
+	case "1", "2", "3", "4", "5", "6", "7":
 		// 数字快捷键：直接跳到对应项并自动 Enter 触发
 		idx, _ := strconv.Atoi(msg.String())
 		if idx >= 1 && idx <= len(menuItems) {
@@ -2403,6 +2474,13 @@ func (m Model) enterMenuSelection() (tea.Model, tea.Cmd) {
 		m.cleanupChat()
 		m.Done = true
 		return m, tea.Quit
+	case 6: // 7 → Discover
+		m.discoverLoading = true
+		m.discoverErr = nil
+		m.discoverOffset = 0
+		m.discoverSel = 0
+		m.phase = PhaseDiscover
+		return m, m.loadDiscoverCmd()
 	}
 	return m, nil
 }
@@ -2573,8 +2651,12 @@ func (m Model) viewMyCards() string {
 			content.WriteString(dim.Render("  📭 You don't own any cards yet.\n"))
 			content.WriteString("  Mint your first card from the Main Menu → 🎴 Mint.\n\n")
 		} else {
-			for _, c := range m.myCardsCache {
-				content.WriteString(fmt.Sprintf("  🎴 Token #%s\n", c.TokenID))
+			for i, c := range m.myCardsCache {
+				marker := "  "
+				if i == m.myCardsSel {
+					marker = m.cursorMarker()
+				}
+				content.WriteString(fmt.Sprintf("%s🎴 Token #%s\n", marker, c.TokenID))
 				if c.Title != "" {
 					content.WriteString(fmt.Sprintf("     Title:   %s\n", c.Title))
 				}
@@ -2582,9 +2664,7 @@ func (m Model) viewMyCards() string {
 					content.WriteString(fmt.Sprintf("     Desc:    %s\n", truncateLine(c.Desc, 60)))
 				}
 				if c.Color != "" {
-					content.WriteString(fmt.Sprintf("     Color:   %s ", c.Color))
-					content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(strings.TrimPrefix(c.Color, "#"))).Render("■"))
-					content.WriteString("\n")
+					content.WriteString(fmt.Sprintf("     Color:   %s %s\n", c.Color, colorSwatch(c.Color)))
 				}
 				if c.H3Index != 0 {
 					content.WriteString(fmt.Sprintf("     H3:      0x%x (res=%d)\n", c.H3Index, c.Res))
@@ -2658,6 +2738,18 @@ func (m Model) updateMyCards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.myCardsLoading = true
 			m.myCardsErr = nil
 			return m, m.loadMyCardsCmd()
+		}
+	case "up", "k":
+		if !m.showNeighbors && m.myCardsSel > 0 {
+			m.myCardsSel--
+		}
+	case "down", "j":
+		if !m.showNeighbors && m.myCardsSel < len(m.myCardsCache)-1 {
+			m.myCardsSel++
+		}
+	case "enter", " ":
+		if !m.showNeighbors && len(m.myCardsCache) > 0 && m.myCardsSel < len(m.myCardsCache) {
+			return m, m.enterCardDetail(m.myCardsCache[m.myCardsSel], PhaseMyCards, false)
 		}
 	case "m", "M":
 		if !m.showNeighbors && len(m.myCardsCache) > 0 && m.myCardsCache[0].H3Index != 0 && !m.neighborLoading {
@@ -2746,6 +2838,9 @@ func (m Model) viewMarket() string {
 				}
 				content.WriteString(prefix)
 				content.WriteString(fmt.Sprintf("#%s  %s", l.TokenID, l.Title))
+				if l.Color != "" {
+					content.WriteString("  " + colorSwatch(l.Color))
+				}
 				content.WriteString("   ")
 				content.WriteString(green.Render(fmt.Sprintf("◎ %s MATIC", l.PriceMATIC)))
 				content.WriteString("\n")
@@ -2763,7 +2858,7 @@ func (m Model) viewMarket() string {
 			content.WriteString(dim.Render(fmt.Sprintf("  Page %d/%d", page+1, totalPages)) + "\n")
 		}
 
-		content.WriteString(hintBar("↑↓/jk select · Enter or B buy · N next page · P prev page · R reload · Esc back"))
+		content.WriteString(hintBar("↑↓/jk select · Enter details · B buy · N next · P prev · R reload · Esc back"))
 	}
 
 	b.WriteString(lipgloss.NewStyle().
@@ -2815,12 +2910,25 @@ func (m Model) updateMarket(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.marketErr = ""
 			return m, m.loadMarketCmd()
 		}
-	case "b", "B", "enter":
+	case "enter", " ":
+		// Enter 进卡片详情页
+		if len(m.marketListings) > 0 {
+			l := m.marketListings[m.marketListingSel]
+			return m, m.enterCardDetail(card.Card{
+				TokenID: l.TokenID,
+				Title:   l.Title,
+				Color:   l.Color,
+				Lat:     l.Lat,
+				Lon:     l.Lon,
+				H3Index: l.H3Index,
+				Owner:   l.Seller,
+			}, PhaseMarket, true)
+		}
+	case "b", "B":
+		// B 直接购买选中的 listing
 		if len(m.marketListings) == 0 {
 			return m, nil
 		}
-		// B / Enter 都可以购买（enter 在 marketplace 视图里没有其他含义）
-		// 买选中的 listing
 		if !m.chainReady() {
 			m.marketErr = "链上钱包未就绪，无法购买"
 			return m, nil
@@ -3154,6 +3262,12 @@ func (m Model) viewHelpOverlay() string {
 			bg = bg[idx+2:]
 		}
 		bg = m.headerBar() + bg
+	case PhaseCardDetail:
+		bg = m.viewCardDetail()
+	case PhaseDiscover:
+		bg = m.viewDiscover()
+	case PhaseProfile:
+		bg = m.viewProfile()
 	default:
 		bg = m.viewMenu()
 	}
@@ -3175,7 +3289,7 @@ func (m Model) viewHelpOverlay() string {
 
 	// 全局（所有页面）
 	b.WriteString("  " + cyan.Render("GLOBAL (any page)") + "\n")
-	b.WriteString("  " + green.Render("?" + strings.Repeat(" ", 14)) + "Toggle this help\n")
+	b.WriteString("  " + green.Render("?"+strings.Repeat(" ", 14)) + "Toggle this help\n")
 	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Back to previous / Quit confirm\n")
 	b.WriteString("  " + green.Render("Ctrl+C") + strings.Repeat(" ", 10) + "Force quit\n")
 	b.WriteString("\n")
@@ -3183,7 +3297,7 @@ func (m Model) viewHelpOverlay() string {
 	// 主菜单
 	b.WriteString("  " + cyan.Render("MAIN MENU") + "\n")
 	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Navigate options\n")
-	b.WriteString("  " + green.Render("1 - 6") + strings.Repeat(" ", 13) + "Jump directly to item\n")
+	b.WriteString("  " + green.Render("1 - 7") + strings.Repeat(" ", 13) + "Jump directly to item\n")
 	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Select current\n")
 	b.WriteString("\n")
 
@@ -3192,15 +3306,34 @@ func (m Model) viewHelpOverlay() string {
 	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload from chain\n")
 	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "Find neighbor cards\n")
 	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "List this card for sale\n")
-	b.WriteString("  " + green.Render("↑ / ↓") + strings.Repeat(" ", 10) + "Scroll cards\n")
+	b.WriteString("  " + green.Render("↑ / ↓") + strings.Repeat(" ", 10) + "Select card\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Card details\n")
 	b.WriteString("\n")
 
 	// Marketplace
 	b.WriteString("  " + cyan.Render("MARKETPLACE") + "\n")
 	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Select listing\n")
-	b.WriteString("  " + green.Render("Enter  or  B") + strings.Repeat(" ", 8) + "Buy selected\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Card details\n")
+	b.WriteString("  " + green.Render("B") + strings.Repeat(" ", 14) + "Buy selected\n")
 	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "Next / Prev page\n")
 	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload listings\n")
+	b.WriteString("\n")
+
+	// Discover
+	b.WriteString("  " + cyan.Render("DISCOVER") + "\n")
+	b.WriteString("  " + green.Render("↑ / ↓  or  j / k") + strings.Repeat(" ", 5) + "Select card\n")
+	b.WriteString("  " + green.Render("Enter") + strings.Repeat(" ", 13) + "Card details\n")
+	b.WriteString("  " + green.Render("N / P") + strings.Repeat(" ", 12) + "Next / Prev page\n")
+	b.WriteString("  " + green.Render("R") + strings.Repeat(" ", 14) + "Reload\n")
+	b.WriteString("\n")
+
+	// Card Detail
+	b.WriteString("  " + cyan.Render("CARD DETAIL") + "\n")
+	b.WriteString("  " + green.Render("B") + strings.Repeat(" ", 14) + "Buy (if listed)\n")
+	b.WriteString("  " + green.Render("L") + strings.Repeat(" ", 14) + "List for sale (my card)\n")
+	b.WriteString("  " + green.Render("M") + strings.Repeat(" ", 14) + "Neighbors (my card)\n")
+	b.WriteString("  " + green.Render("U") + strings.Repeat(" ", 14) + "View owner profile\n")
+	b.WriteString("  " + green.Render("Esc") + strings.Repeat(" ", 13) + "Back\n")
 	b.WriteString("\n")
 
 	// List Card
@@ -3230,4 +3363,428 @@ func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// 任意键关闭帮助浮层，回到之前的页面
 	m.phase = m.prevPhase
 	return m, nil
+}
+
+// ═══════════════════════════════════════════════
+//  🃏 卡片详情页（Market/MyCards/Discover 复用）
+// ═══════════════════════════════════════════════
+
+// colorSwatch — 渲染颜色色块（hex → ■ 前景色）
+func colorSwatch(color string) string {
+	if color == "" {
+		return ""
+	}
+	hex := strings.TrimPrefix(color, "#")
+	if len(hex) != 6 {
+		return "■"
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("■")
+}
+
+// enterCardDetail — 进入单张卡片详情页（设置来源 + 预反查 owner + 异步加载完整信息）
+func (m *Model) enterCardDetail(c card.Card, from Phase, listed bool) tea.Cmd {
+	m.cardDetail = c
+	m.cardDetailFrom = from
+	m.cardDetailListed = listed
+	m.cardDetailOwner = m.findUserByAddr(c.Owner)
+	m.cardDetailLoading = true
+	m.phase = PhaseCardDetail
+	return m.loadCardDetailCmd()
+}
+
+// loadCardDetailCmd — 异步加载单张卡的完整信息（含 Desc/Res/Timestamp，Market 进入时补齐）
+func (m Model) loadCardDetailCmd() tea.Cmd {
+	svc := m.cardService
+	tokenID := m.cardDetail.TokenID
+	return func() tea.Msg {
+		if svc == nil {
+			return cardDetailLoadedMsg{err: fmt.Errorf("链上服务不可用")}
+		}
+		id, err := strconv.ParseUint(tokenID, 10, 64)
+		if err != nil {
+			return cardDetailLoadedMsg{err: err}
+		}
+		c, err := svc.GetCard(id)
+		if err != nil {
+			return cardDetailLoadedMsg{err: err}
+		}
+		return cardDetailLoadedMsg{card: *c}
+	}
+}
+
+func (m Model) viewCardDetail() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar())
+	b.WriteString("\n")
+
+	neon := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted)
+
+	c := m.cardDetail
+	var content strings.Builder
+	content.WriteString(neon.Render(fmt.Sprintf("  🎴 Geoyuan Card #%s", c.TokenID)) + "\n")
+	content.WriteString(dim.Render("  ─────────────────────────────────") + "\n\n")
+
+	if c.Title != "" {
+		content.WriteString(fmt.Sprintf("  Title:      %s\n", c.Title))
+	}
+	if m.cardDetailLoading {
+		content.WriteString("  " + m.spinner() + "  Loading full details...\n")
+	}
+	if c.Desc != "" {
+		content.WriteString(fmt.Sprintf("  Desc:       %s\n", c.Desc))
+	}
+	if c.Color != "" {
+		content.WriteString(fmt.Sprintf("  Color:      %s  %s\n", c.Color, colorSwatch(c.Color)))
+	}
+	if c.H3Index != 0 {
+		content.WriteString(fmt.Sprintf("  H3 cell:    0x%x (res=%d)\n", c.H3Index, c.Res))
+		content.WriteString(fmt.Sprintf("  Lat/Lon:    %.4f, %.4f\n", c.Lat, c.Lon))
+	}
+	if c.Owner != "" {
+		ownerLine := fmt.Sprintf("  Owner:      %s", shortAddr(c.Owner))
+		if m.cardDetailOwner != nil {
+			ownerLine += fmt.Sprintf("  (@%s)", m.cardDetailOwner.Username)
+		}
+		content.WriteString(ownerLine + "\n")
+	}
+	if c.Timestamp > 0 {
+		content.WriteString(fmt.Sprintf("  Minted:     %s\n", time.Unix(c.Timestamp, 0).Format("2006-01-02 15:04")))
+	}
+	if c.TxHash != "" {
+		content.WriteString(fmt.Sprintf("  Tx:         %s\n", shortAddr(c.TxHash)))
+	}
+	content.WriteString("\n")
+
+	// 操作 hint，根据来源
+	switch m.cardDetailFrom {
+	case PhaseMarket:
+		if m.cardDetailListed {
+			content.WriteString(hintBar("B buy · U view owner · Esc back"))
+		} else {
+			content.WriteString(hintBar("U view owner · Esc back"))
+		}
+	case PhaseMyCards:
+		content.WriteString(hintBar("L list · M neighbors · U view owner · Esc back"))
+	default:
+		content.WriteString(hintBar("U view owner · Esc back"))
+	}
+
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(adaptiveCardWidth(m.termWidth)).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
+	return b.String()
+}
+
+func (m Model) updateCardDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.phase = m.cardDetailFrom
+		return m, nil
+	case "b", "B":
+		// 从 Market 进入且已挂售才可购买
+		if m.cardDetailFrom == PhaseMarket && m.cardDetailListed && m.chainReady() {
+			for _, l := range m.marketListings {
+				if l.TokenID == m.cardDetail.TokenID {
+					return m, m.buyCmd(l.TokenID, l.PriceWei)
+				}
+			}
+		}
+	case "l", "L":
+		// 从 My Cards 进入，挂售这张卡
+		if m.cardDetailFrom == PhaseMyCards {
+			for i, c := range m.myCardsCache {
+				if c.TokenID == m.cardDetail.TokenID {
+					m.listCardCursor = i
+					break
+				}
+			}
+			m.listCardErr = ""
+			m.listCardDone = false
+			m.listCardLoading = false
+			m.listPriceWei = ""
+			ti := textinput.New()
+			ti.Prompt = "MATIC 价格: "
+			ti.CharLimit = 20
+			ti.Placeholder = "0.50 = 0.5 MATIC"
+			ti.Focus()
+			m.listInput = ti
+			m.phase = PhaseListCard
+		}
+	case "m", "M":
+		// 从 My Cards 进入，邻居匹配
+		if m.cardDetailFrom == PhaseMyCards && m.cardDetail.H3Index != 0 && !m.neighborLoading {
+			m.neighborK = 2
+			m.neighborH3 = m.cardDetail.H3Index
+			m.neighborLoading = true
+			m.neighborErr = nil
+			m.showNeighbors = true
+			m.phase = PhaseMyCards
+			return m, m.loadNeighborCmd(m.neighborH3, m.neighborK)
+		}
+	case "u", "U":
+		// 查看 owner 个人主页
+		if m.cardDetailOwner != nil {
+			m.profileUser = m.cardDetailOwner
+			m.profileAddr = m.cardDetail.Owner
+			m.profileLoading = true
+			m.profileErr = nil
+			m.profileSel = 0
+			m.phase = PhaseProfile
+			return m, m.loadProfileCmd()
+		}
+	}
+	return m, nil
+}
+
+// ═══════════════════════════════════════════════
+//  🌐 Discover — 全网卡片浏览
+// ═══════════════════════════════════════════════
+
+const discoverPageSize = 10
+
+func (m Model) loadDiscoverCmd() tea.Cmd {
+	svc := m.cardService
+	offset := m.discoverOffset
+	return func() tea.Msg {
+		if svc == nil {
+			return discoverLoadedMsg{err: fmt.Errorf("链上服务不可用")}
+		}
+		cards, count, err := svc.AllCards(offset, discoverPageSize)
+		if err != nil {
+			return discoverLoadedMsg{err: err}
+		}
+		return discoverLoadedMsg{cards: cards, count: count}
+	}
+}
+
+func (m Model) viewDiscover() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar())
+	b.WriteString("\n")
+
+	neon := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted)
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+
+	var content strings.Builder
+	if m.discoverLoading {
+		content.WriteString("  " + m.spinner() + "  Loading all cards from Polygon Amoy...\n")
+	} else if m.discoverErr != nil {
+		content.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.discoverErr)) + "\n\n")
+		content.WriteString(dim.Render("  R retry · Esc back\n"))
+	} else {
+		content.WriteString(neon.Render(fmt.Sprintf("  🌐 Discover — every card on-chain   (%d total)", m.discoverCount)) + "\n\n")
+		if len(m.discoverCards) == 0 {
+			content.WriteString(dim.Render("  📭 No cards minted yet.\n"))
+		} else {
+			for i, c := range m.discoverCards {
+				prefix := "  "
+				if i == m.discoverSel {
+					prefix = m.cursorMarker()
+				}
+				content.WriteString(prefix)
+				content.WriteString(fmt.Sprintf("#%s  %s", c.TokenID, c.Title))
+				if c.Color != "" {
+					content.WriteString("  " + colorSwatch(c.Color))
+				}
+				content.WriteString("\n")
+				content.WriteString(dim.Render(fmt.Sprintf("    owner: %s  ·  cell: 0x%x  ·  %.4f,%.4f",
+					shortAddr(c.Owner), c.H3Index, c.Lat, c.Lon)))
+				content.WriteString("\n\n")
+			}
+		}
+
+		if m.discoverCount > discoverPageSize {
+			page := m.discoverOffset / discoverPageSize
+			totalPages := (m.discoverCount + discoverPageSize - 1) / discoverPageSize
+			content.WriteString(dim.Render(fmt.Sprintf("  Page %d/%d\n", page+1, totalPages)))
+		}
+		content.WriteString(hintBar("↑↓/jk select · Enter details · N next · P prev · R reload · Esc back"))
+	}
+
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(adaptiveCardWidth(m.termWidth)).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
+	return b.String()
+}
+
+func (m Model) updateDiscover(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.phase = PhaseMenu
+		return m, nil
+	case "r", "R":
+		if !m.discoverLoading {
+			m.discoverLoading = true
+			m.discoverErr = nil
+			return m, m.loadDiscoverCmd()
+		}
+	case "up", "k":
+		if m.discoverSel > 0 {
+			m.discoverSel--
+		}
+	case "down", "j":
+		if m.discoverSel < len(m.discoverCards)-1 {
+			m.discoverSel++
+		}
+	case "n", "N":
+		if m.discoverOffset+discoverPageSize < m.discoverCount && !m.discoverLoading {
+			m.discoverOffset += discoverPageSize
+			m.discoverSel = 0
+			m.discoverLoading = true
+			m.discoverErr = nil
+			return m, m.loadDiscoverCmd()
+		}
+	case "p", "P":
+		if m.discoverOffset > 0 && !m.discoverLoading {
+			if m.discoverOffset >= discoverPageSize {
+				m.discoverOffset -= discoverPageSize
+			} else {
+				m.discoverOffset = 0
+			}
+			m.discoverSel = 0
+			m.discoverLoading = true
+			m.discoverErr = nil
+			return m, m.loadDiscoverCmd()
+		}
+	case "enter", " ":
+		if len(m.discoverCards) > 0 {
+			return m, m.enterCardDetail(m.discoverCards[m.discoverSel], PhaseDiscover, false)
+		}
+	}
+	return m, nil
+}
+
+// ═══════════════════════════════════════════════
+//  👤 个人主页（他人资料 + 全部卡）
+// ═══════════════════════════════════════════════
+
+func (m Model) loadProfileCmd() tea.Cmd {
+	svc := m.cardService
+	addr := m.profileAddr
+	return func() tea.Msg {
+		if svc == nil {
+			return profileLoadedMsg{err: fmt.Errorf("链上服务不可用")}
+		}
+		cards, err := svc.MyCards(addr)
+		if err != nil {
+			return profileLoadedMsg{err: err}
+		}
+		return profileLoadedMsg{cards: cards}
+	}
+}
+
+func (m Model) viewProfile() string {
+	var b strings.Builder
+	b.WriteString(m.headerBar())
+	b.WriteString("\n")
+
+	neon := lipgloss.NewStyle().Foreground(cNeonCyan).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(cMuted)
+	green := lipgloss.NewStyle().Foreground(cNeonGreen).Bold(true)
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+
+	var content strings.Builder
+	if m.profileUser != nil {
+		name := m.profileUser.Username
+		if m.profileUser.DisplayName != "" {
+			name = m.profileUser.DisplayName
+		}
+		content.WriteString(neon.Render(fmt.Sprintf("  👤 %s", name)))
+		if m.profileUser.DisplayName != "" {
+			content.WriteString(dim.Render(fmt.Sprintf("  (@%s)", m.profileUser.Username)))
+		}
+		content.WriteString("\n")
+		if m.profileUser.Tagline != "" {
+			content.WriteString(dim.Render(fmt.Sprintf("  %s\n", m.profileUser.Tagline)))
+		}
+		content.WriteString("\n")
+	}
+
+	var hint string
+	if m.profileLoading {
+		hint = "Esc back"
+		content.WriteString("  " + m.spinner() + "  Loading cards...\n")
+	} else if m.profileErr != nil {
+		hint = "Esc back"
+		content.WriteString(red.Render(fmt.Sprintf("  ✗ %v", m.profileErr)) + "\n")
+	} else if len(m.profileCards) == 0 {
+		hint = "Esc back"
+		content.WriteString(dim.Render("  📭 This user has no cards yet.\n"))
+	} else {
+		hint = "↑↓ select · Enter details · Esc back"
+		content.WriteString(green.Render(fmt.Sprintf("  Cards (%d):\n\n", len(m.profileCards))))
+		for i, c := range m.profileCards {
+			marker := "  "
+			if i == m.profileSel {
+				marker = m.cursorMarker()
+			}
+			line := fmt.Sprintf("%s🎴 #%s  %s", marker, c.TokenID, c.Title)
+			if c.Color != "" {
+				line += "  " + colorSwatch(c.Color)
+			}
+			content.WriteString(line + "\n")
+		}
+	}
+	content.WriteString("\n")
+	content.WriteString(hintBar(hint))
+
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(cNeonPurple).
+		Padding(0, 2).
+		Width(adaptiveCardWidth(m.termWidth)).
+		Render(content.String()))
+
+	b.WriteString(m.statusLine())
+	return b.String()
+}
+
+func (m Model) updateProfile(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.phase = PhaseCardDetail
+		return m, nil
+	case "up", "k":
+		if m.profileSel > 0 {
+			m.profileSel--
+		}
+	case "down", "j":
+		if m.profileSel < len(m.profileCards)-1 {
+			m.profileSel++
+		}
+	case "enter", " ":
+		if len(m.profileCards) > 0 && m.profileSel < len(m.profileCards) {
+			return m, m.enterCardDetail(m.profileCards[m.profileSel], PhaseProfile, false)
+		}
+	}
+	return m, nil
+}
+
+// findUserByAddr — 通过钱包地址反查用户（BIP44 派生地址匹配）
+func (m Model) findUserByAddr(addr string) *store.User {
+	if addr == "" || m.walletMgr == nil || m.store == nil {
+		return nil
+	}
+	users, err := m.store.ListApprovedUsers()
+	if err != nil {
+		return nil
+	}
+	for i := range users {
+		if strings.EqualFold(m.walletMgr.AddressFor(users[i].ID), addr) {
+			return &users[i]
+		}
+	}
+	return nil
 }
