@@ -75,6 +75,8 @@ sudo iptables -t nat -A OUTPUT -p tcp -d 127.0.0.1 --dport 22 -j REDIRECT --to-p
 
 注意：若服务器 22 端口已被系统 sshd 占用，需先停掉或改用方式 B 把外部 22 转到 2222（系统 sshd 改监听其它端口或内网）。
 
+> 部署提示：CI/CD（`.github/workflows/deploy-go.yml`）通过系统 sshd 的 2222 端口 SSH 部署，服务名在 Debian/Ubuntu 上是 `ssh.service`（不是 `sshd.service`），reload/restart 用 `systemctl reload ssh`。若部署报 `handshake failed`，先确认 sshd 的 `AllowUsers`/`AllowGroups` 未限制 GitHub runner IP。
+
 ## systemd 常驻
 
 ```ini
